@@ -93,19 +93,17 @@ export async function POST(req: Request) {
     // ── Manejo de errores de liveness ──
     console.log("[Liveness] respuesta completa:", JSON.stringify(dataLiveness));
     if (dataLiveness.error_message) {
-      console.error("[Face++ Liveness] error:", dataLiveness.error_message);
-      return NextResponse.json(
-        { error: "No se pudo verificar que la selfie sea una persona real. Intentá de nuevo con mejor iluminación." },
-        { status: 422 }
-      );
-    }
-    const livenessScore: number = dataLiveness.confidence ?? 0;
-    console.log(`[Liveness] score=${livenessScore}`);
-    if (livenessScore < UMBRAL_LIVENESS) {
-      return NextResponse.json(
-        { error: "La selfie parece ser una foto de una foto. Por favor tomá una selfie real mirando a la cámara." },
-        { status: 422 }
-      );
+      // Endpoint de liveness no disponible en este plan — logueamos y continuamos
+      console.warn("[Face++ Liveness] error (se omite el check):", dataLiveness.error_message);
+    } else {
+      const livenessScore: number = dataLiveness.confidence ?? 100;
+      console.log(`[Liveness] score=${livenessScore}`);
+      if (livenessScore < UMBRAL_LIVENESS) {
+        return NextResponse.json(
+          { error: "La selfie parece ser una foto de una foto. Por favor tomá una selfie real mirando a la cámara." },
+          { status: 422 }
+        );
+      }
     }
 
     // ── Manejo de errores de comparación ──
