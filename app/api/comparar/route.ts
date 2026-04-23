@@ -6,11 +6,13 @@ type ValidacionUpdate = Database["public"]["Tables"]["validaciones"]["Update"];
 
 export const maxDuration = 30;
 
-const FACEPP_ENDPOINT = "https://api-us.faceplusplus.com/facepp/v3/compare";
+const FACEPP_COMPARE  = "https://api-us.faceplusplus.com/facepp/v3/compare";
+const FACEPP_LIVENESS = "https://api-us.faceplusplus.com/facepp/v1/faceliveness";
 
-// Face++ recomienda threshold ~76 para FAR 1e-5 (muy estricto, uso real en identidad)
-// Usamos 70 para ser un poco más permisivos con fotos de DNI reflejadas/iluminación variable
+// Umbral de confianza de comparación facial (0-100)
 const UMBRAL_CONFIANZA = 70;
+// Umbral de liveness: Face++ devuelve 0-100, >50 = persona real
+const UMBRAL_LIVENESS = 50;
 
 function parseDataUrl(dataUrl: string): { mime: string; b64: string } {
   const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
@@ -18,11 +20,13 @@ function parseDataUrl(dataUrl: string): { mime: string; b64: string } {
   return { mime: "image/jpeg", b64: dataUrl };
 }
 
-// Face++ tiene límite de 2MB por imagen. Tamaño en bytes del base64 decodificado.
 const LIMITE_BYTES = 2 * 1024 * 1024;
 function base64Size(b64: string): number {
-  // Aproximación: cada 4 chars base64 = 3 bytes
   return Math.floor((b64.length * 3) / 4);
+}
+
+function makeBlob(buf: Buffer, mime: string) {
+  return new Blob([new Uint8Array(buf)], { type: mime });
 }
 
 export async function POST(req: Request) {
@@ -42,7 +46,6 @@ export async function POST(req: Request) {
     const { mime: mimeDni, b64: b64Dni } = parseDataUrl(imagenDni);
     const { mime: mimeSelfie, b64: b64Selfie } = parseDataUrl(imagenSelfie);
 
-    // Face++ solo acepta JPG/PNG. Si viene otro formato (HEIC, WebP), rechazar con mensaje claro
     const formatosOk = ["image/jpeg", "image/jpg", "image/png"];
     if (!formatosOk.includes(mimeDni)) {
       return NextResponse.json({ error: `Formato del DNI no soportado (${mimeDni}). Usá JPG o PNG.` }, { status: 422 });
@@ -52,30 +55,59 @@ export async function POST(req: Request) {
     }
 
     if (base64Size(b64Dni) > LIMITE_BYTES) {
-      return NextResponse.json({ error: "La foto del DNI pesa demasiado. Intentá con una foto más chica (máx 2MB)." }, { status: 413 });
+      return NextResponse.json({ error: "La foto del DNI pesa demasiado (máx 2MB)." }, { status: 413 });
     }
     if (base64Size(b64Selfie) > LIMITE_BYTES) {
       return NextResponse.json({ error: "La selfie pesa demasiado (máx 2MB)." }, { status: 413 });
     }
 
-    // Enviamos las imágenes como archivos (image_file1/2) vía multipart/form-data
-    // Es el método más confiable con Face++ para imágenes grandes
-    const bufDni = Buffer.from(b64Dni, "base64");
+    const bufDni    = Buffer.from(b64Dni, "base64");
     const bufSelfie = Buffer.from(b64Selfie, "base64");
-
-    const form = new FormData();
-    form.append("api_key", apiKey);
-    form.append("api_secret", apiSecret);
-    const extDni = mimeDni === "image/png" ? "png" : "jpg";
+    const extDni    = mimeDni === "image/png" ? "png" : "jpg";
     const extSelfie = mimeSelfie === "image/png" ? "png" : "jpg";
-    form.append("image_file1", new Blob([new Uint8Array(bufDni)], { type: mimeDni }), `dni.${extDni}`);
-    form.append("image_file2", new Blob([new Uint8Array(bufSelfie)], { type: mimeSelfie }), `selfie.${extSelfie}`);
 
-    const res = await fetch(FACEPP_ENDPOINT, { method: "POST", body: form });
-    const data = await res.json();
+    // ── 1. Liveness detection en la selfie (en paralelo con la comparación) ──
+    const formLiveness = new FormData();
+    formLiveness.append("api_key", apiKey);
+    formLiveness.append("api_secret", apiSecret);
+    formLiveness.append("image_file", makeBlob(bufSelfie, mimeSelfie), `selfie.${extSelfie}`);
 
-    if (!res.ok || data.error_message) {
-      const msg = data.error_message || `HTTP ${res.status}`;
+    // ── 2. Comparación facial ──
+    const formCompare = new FormData();
+    formCompare.append("api_key", apiKey);
+    formCompare.append("api_secret", apiSecret);
+    formCompare.append("image_file1", makeBlob(bufDni, mimeDni), `dni.${extDni}`);
+    formCompare.append("image_file2", makeBlob(bufSelfie, mimeSelfie), `selfie.${extSelfie}`);
+
+    // Llamamos ambas en paralelo para ahorrar tiempo
+    const [resLiveness, resCompare] = await Promise.all([
+      fetch(FACEPP_LIVENESS, { method: "POST", body: formLiveness }),
+      fetch(FACEPP_COMPARE,  { method: "POST", body: formCompare }),
+    ]);
+
+    const [dataLiveness, dataCompare] = await Promise.all([
+      resLiveness.json(),
+      resCompare.json(),
+    ]);
+
+    // ── Manejo de errores de liveness ──
+    if (dataLiveness.error_message) {
+      console.warn("[Face++ Liveness]", dataLiveness.error_message);
+      // Si liveness falla por error técnico lo dejamos pasar (no bloqueamos al usuario)
+    } else {
+      const livenessScore: number = dataLiveness.confidence ?? 100;
+      console.log(`[Liveness] score=${livenessScore}`);
+      if (livenessScore < UMBRAL_LIVENESS) {
+        return NextResponse.json(
+          { error: "La selfie parece ser una foto de una foto. Por favor tomá una selfie real mirando a la cámara." },
+          { status: 422 }
+        );
+      }
+    }
+
+    // ── Manejo de errores de comparación ──
+    if (!resCompare.ok || dataCompare.error_message) {
+      const msg = dataCompare.error_message || `HTTP ${resCompare.status}`;
       if (typeof msg === "string") {
         if (msg.includes("IMAGE_ERROR_UNSUPPORTED_FORMAT")) {
           return NextResponse.json({ error: "Formato de imagen no soportado." }, { status: 422 });
@@ -87,26 +119,25 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: "La imagen pesa demasiado (máx 2MB)." }, { status: 422 });
         }
       }
-      console.error("[Face++]", msg, data);
+      console.error("[Face++ Compare]", msg, dataCompare);
       return NextResponse.json({ error: `Error de Face++: ${msg}` }, { status: 502 });
     }
 
-    // Face++ devuelve faces1[] / faces2[] - si están vacíos, no detectó cara
-    if (!data.faces1 || data.faces1.length === 0) {
+    if (!dataCompare.faces1 || dataCompare.faces1.length === 0) {
       return NextResponse.json(
         { error: "No se detectó ningún rostro en la foto del DNI. Probá con mejor iluminación o un ángulo más frontal." },
         { status: 422 }
       );
     }
-    if (!data.faces2 || data.faces2.length === 0) {
+    if (!dataCompare.faces2 || dataCompare.faces2.length === 0) {
       return NextResponse.json(
         { error: "No se detectó ningún rostro en la selfie. Asegurate de mirar a la cámara." },
         { status: 422 }
       );
     }
 
-    const confianza: number = data.confidence; // 0-100
-    const similitud = confianza / 100; // normalizamos a 0-1 para mantener el schema existente
+    const confianza: number = dataCompare.confidence;
+    const similitud = confianza / 100;
     const estado: ValidacionUpdate["estado"] = confianza >= UMBRAL_CONFIANZA ? "aprobado" : "rechazado";
 
     const supabase = getSupabase();
