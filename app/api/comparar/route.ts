@@ -118,23 +118,18 @@ export async function POST(req: Request) {
     formCompare.append("image_file1", makeBlob(bufDni, mimeDni), `dni.${extDni}`);
     formCompare.append("image_file2", makeBlob(bufSelfie, mimeSelfie), `selfie.${extSelfie}`);
 
-    // Llamamos a Face++ de inmediato
-    const resOps = Promise.all([
-      fetch(FACEPP_LIVENESS, { method: "POST", body: formLiveness }),
-      fetch(FACEPP_COMPARE,  { method: "POST", body: formCompare }),
-    ]);
+    // Ejecutamos las llamadas de forma SECUENCIAL (evitar límite de concurrencia de APIs gratuitas)
+    const resLiveness = await fetch(FACEPP_LIVENESS, { method: "POST", body: formLiveness });
+    const dataLiveness = await resLiveness.json();
+
+    const resCompare = await fetch(FACEPP_COMPARE,  { method: "POST", body: formCompare });
+    const dataCompare = await resCompare.json();
 
     // Watermark en paralelo (Blindaje extra anti-robo interno)
     const [wbDni, wbDorso, wbSelfie] = await Promise.all([
       drawWatermark(bufDni, mimeDni),
       drawWatermark(bufDorso, mimeDorso),
       drawWatermark(bufSelfie, mimeSelfie)
-    ]);
-
-    const [resLiveness, resCompare] = await resOps;
-    const [dataLiveness, dataCompare] = await Promise.all([
-      resLiveness.json(),
-      resCompare.json(),
     ]);
 
     // ── Manejo de Liveness Face++ ──

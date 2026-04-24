@@ -150,9 +150,11 @@ export default function SelfieCapture({ onCaptura }: Props) {
           const faces = [...detections.detections].sort((a, b) => b.boundingBox!.width - a.boundingBox!.width);
           const bestFace = faces[0].boundingBox!;
           const videoWidth = video.videoWidth || 1;
-          const normalizedWidth = bestFace.width / videoWidth;
+          const videoHeight = video.videoHeight || 1;
+          const shortSide = Math.min(videoWidth, videoHeight);
+          const normalizedWidth = bestFace.width / shortSide;
 
-          if (normalizedWidth < 0.40) {
+          if (normalizedWidth < 0.23) {
             newStatus = "lejos";
           } else if (normalizedWidth > 0.65) {
             newStatus = "cerca";
