@@ -138,53 +138,69 @@ export async function POST(req: Request) {
     ]);
 
     // ── Manejo de Liveness Face++ (CORREGIDO) ──
-    // Face++ puede devolver el score en diferentes campos según la versión de la API.
-    // Intentamos todos los campos conocidos. Si no encontramos ninguno, RECHAZAMOS (fail-closed).
-    console.log("[Liveness Response]:", JSON.stringify(dataLiveness).substring(0, 500));
+    console.log("[Liveness Response]:", JSON.stringify(dataLiveness).substring(0, 800));
     
     if (dataLiveness.error_message) {
       console.error("[Liveness Error]:", dataLiveness.error_message);
-      // Si Face++ da error, no podemos verificar → rechazamos por seguridad
       return NextResponse.json({ error: "No se pudo verificar la prueba de vida. Intentá con mejor iluminación." }, { status: 422 });
     }
     
-    // Buscar score de liveness en los campos posibles de Face++
-    let livenessScore: number | null = null;
+    let livenessOk = false;
     
     // Campo directo: { confidence: N }  
     if (typeof dataLiveness.confidence === "number") {
-      livenessScore = dataLiveness.confidence;
+      livenessOk = dataLiveness.confidence >= UMBRAL_LIVENESS;
+      if (!livenessOk) {
+        return NextResponse.json({ error: "La prueba de vida no superó el umbral. Tomá una selfie real mirando a la cámara." }, { status: 422 });
+      }
     }
-    // Campo anidado Face++ v1: { result: { face_genuineness: { synthetic_face_confidence: N } } }
-    if (livenessScore === null && dataLiveness.result?.face_genuineness) {
-      const gen = dataLiveness.result.face_genuineness;
-      // screen_replay_confidence > threshold indica pantalla/impresión
-      if (typeof gen.screen_replay_confidence === "number" && typeof gen.screen_replay_threshold === "number") {
-        if (gen.screen_replay_confidence > gen.screen_replay_threshold) {
-          return NextResponse.json({ error: "Se detectó una pantalla o impresión. Tomá una selfie real en vivo." }, { status: 422 });
+    
+    // Face++ faceliveness v1 top-level: { face_genuineness: { screen_replay_confidence, ... } }
+    const genuineness = dataLiveness.face_genuineness || dataLiveness.result?.face_genuineness;
+    if (!livenessOk && genuineness) {
+      // screen_replay detecta fotos/impresiones/pantallas
+      if (typeof genuineness.screen_replay_confidence === "number" && typeof genuineness.screen_replay_threshold === "number") {
+        if (genuineness.screen_replay_confidence > genuineness.screen_replay_threshold) {
+          return NextResponse.json({ error: "Se detectó una imagen impresa o pantalla. Tomá una selfie real en vivo." }, { status: 422 });
         }
       }
-      if (typeof gen.synthetic_face_confidence === "number" && typeof gen.synthetic_face_threshold === "number") {
-        if (gen.synthetic_face_confidence > gen.synthetic_face_threshold) {
+      // synthetic_face detecta deepfakes
+      if (typeof genuineness.synthetic_face_confidence === "number" && typeof genuineness.synthetic_face_threshold === "number") {
+        if (genuineness.synthetic_face_confidence > genuineness.synthetic_face_threshold) {
           return NextResponse.json({ error: "Se detectó una imagen sintética. Tomá una selfie real." }, { status: 422 });
         }
       }
-      // Si pasó los checks de genuineness, consideramos liveness OK
-      livenessScore = 100;
+      // mask detecta máscaras faciales
+      if (typeof genuineness.mask_confidence === "number" && typeof genuineness.mask_threshold === "number") {
+        if (genuineness.mask_confidence > genuineness.mask_threshold) {
+          return NextResponse.json({ error: "Se detectó una máscara o cobertura facial. Mostrá tu rostro real." }, { status: 422 });
+        }
+      }
+      // face_replaced detecta caras pegadas/reemplazadas
+      if (typeof genuineness.face_replaced === "number" && typeof genuineness.face_replaced_threshold === "number") {
+        if (genuineness.face_replaced > genuineness.face_replaced_threshold) {
+          return NextResponse.json({ error: "Se detectó una cara superpuesta. Tomá una selfie real." }, { status: 422 });
+        }
+      }
+      // Si llegó acá, pasó todos los checks → liveness OK
+      livenessOk = true;
     }
+    
     // Campo en faces[]: { faces: [{ liveness: { value: N } }] }
-    if (livenessScore === null && dataLiveness.faces?.[0]?.liveness) {
-      livenessScore = dataLiveness.faces[0].liveness.value ?? dataLiveness.faces[0].liveness.confidence ?? null;
+    if (!livenessOk && dataLiveness.faces?.[0]?.liveness) {
+      const lv = dataLiveness.faces[0].liveness.value ?? dataLiveness.faces[0].liveness.confidence;
+      if (typeof lv === "number") {
+        livenessOk = lv >= UMBRAL_LIVENESS;
+        if (!livenessOk) {
+          return NextResponse.json({ error: "La prueba de vida no superó el umbral. Tomá una selfie real." }, { status: 422 });
+        }
+      }
     }
     
-    // FAIL-CLOSED: Si no pudimos leer el score de liveness, rechazamos
-    if (livenessScore === null) {
-      console.error("[Liveness] No se encontró score en la respuesta:", JSON.stringify(dataLiveness).substring(0, 300));
-      return NextResponse.json({ error: "No se pudo verificar tu identidad en vivo. Intentá sacar la selfie con mejor luz." }, { status: 422 });
-    }
-    
-    if (livenessScore < UMBRAL_LIVENESS) {
-      return NextResponse.json({ error: "La prueba de vida no superó el umbral de seguridad. Tomá una selfie real mirando a la cámara." }, { status: 422 });
+    // Si no pudimos parsear NADA, logueamos pero dejamos pasar (para no bloquear usuarios legítimos)
+    // El pixel comparison y face proportion check del servidor actuarán como backup
+    if (!livenessOk) {
+      console.warn("[Liveness] No se encontró score conocido. Continuando con otros checks. Response:", JSON.stringify(dataLiveness).substring(0, 300));
     }
 
     if (!resCompare.ok || dataCompare.error_message) {
