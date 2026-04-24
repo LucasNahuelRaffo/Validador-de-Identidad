@@ -166,10 +166,18 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         }
 
         // Extraer datos de la MRZ del dorso
+        // Helper: limpiar nombre de MRZ quitando basura K/L del padding
+        const cleanMrzName = (raw: string): string => {
+          return raw.split(/\s+/).filter(w => {
+            if (w.length < 2) return false;
+            const klCount = (w.match(/[KL]/gi) || []).length;
+            return klCount / w.length < 0.5;
+          }).join(" ");
+        };
+
         const lineas = texto.split("\n");
         for (const rawLinea of lineas) {
           // Tesseract lee < como <K o <L consistentemente.
-          // Limpiamos el patrón <K y <L → < antes de extraer.
           const linea = rawLinea.replace(/<[KL](?=[A-Z])/g, "<");
           
           // Estrategia 1: la línea tiene << reales
@@ -177,36 +185,31 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
             const matchName = linea.match(/([A-Z]{2,})<<([A-Z][A-Z< ]*)/);
             if (matchName) {
               const ap = matchName[1];
-              const nom = matchName[2].replace(/<+/g, " ").trim();
-              datosDni.nombre_mrz = `${ap} ${nom}`;
+              const nom = cleanMrzName(matchName[2].replace(/<+/g, " ").trim());
+              if (nom) datosDni.nombre_mrz = `${ap} ${nom}`;
             }
           }
           
-          // Intento 2: si la línea tiene 3+ K/L seguidas, Tesseract confundió los <<
-          // Reemplazamos SOLO secuencias de K/L consecutivas (no letras sueltas en nombres)
+          // Estrategia 2: secuencias largas de K/L (chevrones mal leídos)
           if (/[KL]{3,}/.test(linea) && !datosDni.nombre_mrz) {
             const normalizada = linea.replace(/[KL]{2,}/g, (match) => "<".repeat(match.length));
             if (normalizada.includes("<<")) {
               const matchName = normalizada.match(/([A-Z]{2,})<<([A-Z][A-Z< ]*)/);
               if (matchName) {
                 const ap = matchName[1];
-                const nom = matchName[2].replace(/<+/g, " ").trim();
-                datosDni.nombre_mrz = `${ap} ${nom}`;
+                const nom = cleanMrzName(matchName[2].replace(/<+/g, " ").trim());
+                if (nom) datosDni.nombre_mrz = `${ap} ${nom}`;
               }
             }
           }
           
-          // Estrategia 3 (nuclear): extraer todas las palabras reales de la línea
-          // y filtrar las que sean basura (puro K/L). Funciona cuando Tesseract
-          // mezcla < reales con K/L de forma imprevisible.
+          // Estrategia 3 (nuclear): extraer todas las palabras reales
           if (!datosDni.nombre_mrz && (linea.includes("<") || /[KL]{3,}/.test(linea))) {
             const allWords = linea.match(/[A-Z]{2,}/g);
             if (allWords && allWords.length >= 2) {
               const nameWords = allWords.filter(w => {
                 const klCount = (w.match(/[KL]/g) || []).length;
-                const isGarbage = klCount / w.length > 0.5;
-                const isMrzPrefix = /^(IDARG|ARG|ARGA|ID)$/i.test(w);
-                return !isGarbage && !isMrzPrefix;
+                return klCount / w.length < 0.5 && !/^(IDARG|ARG|ARGA|ID)$/i.test(w);
               });
               if (nameWords.length >= 2) {
                 datosDni.nombre_mrz = nameWords.join(" ");
