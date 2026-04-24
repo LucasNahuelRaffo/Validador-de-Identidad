@@ -1,3 +1,5 @@
+import { motion } from "framer-motion";
+
 type Props = {
   estado: "aprobado" | "rechazado";
   similitud: number;
@@ -8,51 +10,93 @@ export default function ResultadoValidacion({ estado, similitud, onReintentar }:
   const aprobado = estado === "aprobado";
 
   return (
-    <div className="flex flex-col items-center text-center gap-6 py-4">
-      <div className={`w-20 h-20 rounded-full flex items-center justify-center ${aprobado ? "bg-green-100" : "bg-red-100"}`}>
+    <div className="flex flex-col items-center text-center gap-6 py-4 overflow-hidden">
+      <motion.div 
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 200, damping: 20 }}
+        className={`w-20 h-20 rounded-full flex items-center justify-center ${aprobado ? "bg-green-100" : "bg-red-100"}`}
+      >
         {aprobado ? (
-          <svg className="w-10 h-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
+          <motion.svg 
+            initial={{ pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            className="w-10 h-10 text-green-600" 
+            fill="none" 
+            viewBox="0 0 24 24" 
+            stroke="currentColor"
+          >
+            <motion.path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+          </motion.svg>
         ) : (
-          <svg className="w-10 h-10 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <motion.svg 
+            initial={{ pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            className="w-10 h-10 text-red-500" 
+            fill="none" 
+            viewBox="0 0 24 24" 
+            stroke="currentColor"
+          >
+            <motion.path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+          </motion.svg>
         )}
-      </div>
+      </motion.div>
 
-      <div>
+      <motion.div
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.3 }}
+      >
         <h2 className={`text-2xl font-bold ${aprobado ? "text-green-700" : "text-red-600"}`}>
           {aprobado ? "Identidad verificada" : "No se pudo verificar"}
         </h2>
         <p className="text-slate-500 text-sm mt-1">
           {aprobado
             ? "Tu identidad fue validada correctamente. Ya podés cerrar esta pantalla."
-            : "La similitud facial no fue suficiente para validar tu identidad."}
+            : "La similitud facial no fue suficiente para validar tu identidad o la foto falló los controles de seguridad."}
         </p>
-      </div>
+      </motion.div>
 
-      <div className="w-full bg-slate-100 rounded-xl px-5 py-4 text-left space-y-1">
+      <motion.div 
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.5 }}
+        className="w-full bg-slate-100 rounded-xl px-5 py-4 text-left space-y-1"
+      >
         <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Similitud facial</p>
         <div className="flex items-center gap-3">
-          <div className="flex-1 bg-slate-200 rounded-full h-2">
-            <div
-              className={`h-2 rounded-full transition-all ${aprobado ? "bg-green-500" : "bg-red-400"}`}
-              style={{ width: `${(similitud * 100).toFixed(0)}%` }}
+          <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${(similitud * 100).toFixed(0)}%` }}
+              transition={{ duration: 1, delay: 0.8, ease: "easeOut" }}
+              className={`h-full rounded-full ${aprobado ? "bg-green-500" : "bg-red-400"}`}
             />
           </div>
-          <span className="text-sm font-semibold text-slate-700">{(similitud * 100).toFixed(1)}%</span>
+          <motion.span 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 1.5 }}
+            className="text-sm font-semibold text-slate-700"
+          >
+            {(similitud * 100).toFixed(1)}%
+          </motion.span>
         </div>
         <p className="text-xs text-slate-400">Umbral mínimo: 70%</p>
-      </div>
+      </motion.div>
 
       {!aprobado && (
-        <button
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1 }}
           onClick={onReintentar}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition-colors"
         >
           Reintentar validación
-        </button>
+        </motion.button>
       )}
     </div>
   );
