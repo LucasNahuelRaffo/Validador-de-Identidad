@@ -255,12 +255,13 @@ export default function SelfieCapture({ onCaptura }: Props) {
         <div className="relative rounded-2xl overflow-hidden bg-black aspect-video">
           <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" playsInline muted autoPlay />
           
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <motion.div 
-               animate={{ scale: [0.95, 1, 0.95] }}
-               transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-               className={`w-48 h-60 border-4 rounded-full transition-colors duration-300 ${getBorderColor()}`} 
-            />
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+             {/* Este div crea el "agujero" transparente rodeado de negro */}
+             <motion.div 
+                animate={{ scale: [0.98, 1, 0.98] }}
+                transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                className={`w-56 h-[320px] border-[5px] rounded-[100%] transition-colors duration-300 ${getBorderColor()} shadow-[0_0_0_9999px_rgba(0,0,0,0.85)] bg-transparent`} 
+             />
           </div>
 
           <div className="absolute bottom-4 left-0 right-0 flex justify-center pointer-events-none px-4">
