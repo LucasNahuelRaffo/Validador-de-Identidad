@@ -159,21 +159,43 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
           throw new Error("Parece que subiste el frente. Necesitamos la parte de ATRÁS (código de barras).");
         }
 
-        // Tesseract confunde < con K o L. Normalizamos
+        // Extraer datos de la MRZ del dorso
         const lineas = texto.split("\n");
         for (const linea of lineas) {
-          const normalizada = linea.replace(/[KL]/g, "<");
-          
-          if (normalizada.includes("<<")) {
-            const matchName = normalizada.match(/([A-Z]{2,})<<([A-Z][A-Z<]*)/);
+          // Intento 1: probar la línea cruda (Tesseract a veces lee << correctamente)
+          if (linea.includes("<<")) {
+            const matchName = linea.match(/([A-Z]{2,})<<([A-Z][A-Z< ]*)/);
             if (matchName) {
               const ap = matchName[1];
               const nom = matchName[2].replace(/<+/g, " ").trim();
-              if (!datosDni.nombre_raw) datosDni.nombre_raw = `${ap} ${nom}`;
+              datosDni.nombre_mrz = `${ap} ${nom}`;
             }
           }
-          const idMatch = normalizada.match(/(?:ARG|<|I0|ID)[A-Z0-9<]*(\d{7,8})/);
-          if (idMatch) datosDni.numero_mrz = idMatch[1];
+          
+          // Intento 2: si la línea tiene 3+ K/L seguidas, Tesseract confundió los <<
+          // Reemplazamos SOLO secuencias de K/L consecutivas (no letras sueltas en nombres)
+          if (/[KL]{3,}/.test(linea) && !datosDni.nombre_mrz) {
+            const normalizada = linea.replace(/[KL]{2,}/g, (match) => "<".repeat(match.length));
+            if (normalizada.includes("<<")) {
+              const matchName = normalizada.match(/([A-Z]{2,})<<([A-Z][A-Z< ]*)/);
+              if (matchName) {
+                const ap = matchName[1];
+                const nom = matchName[2].replace(/<+/g, " ").trim();
+                datosDni.nombre_mrz = `${ap} ${nom}`;
+              }
+            }
+          }
+
+          // Número de documento desde MRZ
+          const idMatchRaw = linea.match(/IDARG(\d{7,8})/);
+          if (idMatchRaw) {
+            datosDni.numero_mrz = idMatchRaw[1];
+          } else if (!datosDni.numero_mrz) {
+            // Intento con normalización parcial
+            const norm = linea.replace(/[KL]{2,}/g, (m) => "<".repeat(m.length));
+            const idMatch2 = norm.match(/(?:IDARG|I0ARG)[<\d]*?(\d{7,8})/);
+            if (idMatch2) datosDni.numero_mrz = idMatch2[1];
+          }
         }
       }
 

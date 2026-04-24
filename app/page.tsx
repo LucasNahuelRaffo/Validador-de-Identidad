@@ -314,7 +314,7 @@ export default function PanelVendedor() {
                              </div>
                              <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
                                 <p className="text-[10px] text-slate-400 font-bold uppercase">Nombre (Bruto)</p>
-                                <p className="text-sm font-medium text-slate-800 truncate">{fotosElegidas.datos_dni?.nombre_raw || "No detectado"}</p>
+                                <p className="text-sm font-medium text-slate-800 truncate">{fotosElegidas.datos_dni?.nombre_mrz || fotosElegidas.datos_dni?.nombre_raw || "No detectado"}</p>
                              </div>
                              <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
                                 <p className="text-[10px] text-slate-400 font-bold uppercase">Formato</p>
