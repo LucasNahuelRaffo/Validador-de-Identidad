@@ -155,6 +155,13 @@ export default function ValidacionPage() {
                   Verificar identidad →
                 </button>
               )}
+              <button 
+                onClick={() => setPaso("dni")} 
+                className="w-full text-slate-500 hover:text-slate-700 text-sm font-medium py-2 transition-colors"
+                title="Volver a cargar foto de DNI"
+              >
+                ← Volver atrás
+              </button>
             </div>
           )}
 
