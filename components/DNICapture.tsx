@@ -173,6 +173,27 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
     }
   };
 
+  const manejarSubidaArchivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setModo("preview");
+    setProcesando(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.readAsDataURL(file);
+      });
+      setPreview(dataUrl);
+      await procesarImagenBase64(dataUrl);
+    } catch (err) {
+      setError("Error al leer el archivo.");
+      setProcesando(false);
+      setModo("idle");
+    }
+  };
+
   const capturarFrame = useCallback(() => {
     if (isCapturingRef.current) return;
     isCapturingRef.current = true;
@@ -378,18 +399,30 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
       </div>
 
       {modo === "idle" && (
-        <button
-          type="button"
-          onClick={() => abrirCamara()}
-          className="w-full border-2 border-dashed border-slate-300 hover:border-blue-400 rounded-2xl p-10 flex flex-col items-center gap-3 transition-colors"
-        >
-          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
-            <svg className="w-8 h-8 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-            </svg>
-          </div>
-          <span className="text-sm font-medium text-slate-700">Abrir cámara inteligente</span>
-        </button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <button
+            type="button"
+            onClick={() => abrirCamara()}
+            className="w-full border-2 border-dashed border-slate-300 hover:border-blue-400 rounded-2xl p-8 flex flex-col items-center gap-3 transition-colors"
+          >
+            <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center">
+              <svg className="w-7 h-7 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              </svg>
+            </div>
+            <span className="text-sm font-medium text-slate-700">Abrir cámara inteligente</span>
+          </button>
+
+          <label className="w-full border-2 border-dashed border-slate-300 hover:border-blue-400 rounded-2xl p-8 flex flex-col items-center gap-3 transition-colors cursor-pointer text-center">
+            <input type="file" accept="image/*" className="hidden" onChange={manejarSubidaArchivo} />
+            <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center">
+              <svg className="w-7 h-7 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            </div>
+            <span className="text-sm font-medium text-slate-700">Cargar archivo (PC)</span>
+          </label>
+        </div>
       )}
 
       <div className={modo === "camara" ? "space-y-4" : "hidden"}>
