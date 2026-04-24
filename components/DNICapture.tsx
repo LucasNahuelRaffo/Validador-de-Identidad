@@ -236,10 +236,28 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
     const track = streamRef.current.getVideoTracks()[0];
     try {
         const nuevoEstado = !flashActivado;
-        await track.applyConstraints({ advanced: [{ torch: nuevoEstado }] } as any);
+        const constraints = track.getConstraints();
+        await track.applyConstraints({
+            ...constraints,
+            advanced: [{ torch: nuevoEstado }]
+        } as any);
         setFlashActivado(nuevoEstado);
+        
+        // Ciertos dispositivos pausan el stream nativamente al cambiar los constraints de la cámara.
+        // Nos aseguramos de forzar el "play" nuevamente por si el frame se congeló en negro.
+        if (videoRef.current && videoRef.current.paused) {
+            videoRef.current.play().catch(() => {});
+        }
     } catch (e) {
-        console.warn("Flash no activado", e);
+        console.warn("Error al intentar cambiar el estado del flash", e);
+        // Fallback: algunos OS requieren la propiedad directamente en el objeto superior
+        try {
+            const nuevoEstado = !flashActivado;
+            await track.applyConstraints({ torch: nuevoEstado } as any);
+            setFlashActivado(nuevoEstado);
+        } catch (e2) {
+             console.error("Fallo crítico del flash", e2);
+        }
     }
   };
 
