@@ -13,11 +13,12 @@ type Props = {
 function calcularMovimiento(d1: Uint8ClampedArray, d2: Uint8ClampedArray): number {
   let distintos = 0;
   const total = d1.length / 4;
-  for (let i = 0; i < d1.length; i += 16) { // step by 4 pixels to be faster
+  for (let i = 0; i < d1.length; i += 16) { 
     const dr = Math.abs(d1[i] - d2[i]);
     const dg = Math.abs(d1[i + 1] - d2[i + 1]);
     const db = Math.abs(d1[i + 2] - d2[i + 2]);
-    if (dr + dg + db > 45) distintos++;
+    // Aumentamos la tolerancia del color (de 45 a 60) para ignorar vibraciones leves
+    if (dr + dg + db > 60) distintos++;
   }
   return distintos / (total / 4);
 }
@@ -164,7 +165,7 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         if (prevFrameRef.current) {
           const mov = calcularMovimiento(prevFrameRef.current.data, currentFrame.data);
           
-          if (mov < 0.05) { // Estable
+          if (mov < 0.15) { // Estable (Margen de tolerancia aumentado para temblores)
             if (tiempoEstableRef.current === 0) {
               tiempoEstableRef.current = performance.now();
               setCountdown(3);
