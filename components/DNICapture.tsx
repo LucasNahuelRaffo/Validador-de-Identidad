@@ -58,7 +58,6 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
     }
     prevFrameRef.current = null;
     isCapturingRef.current = false;
-    setFlashActivado(false);
   }, [flashActivado]);
 
   useEffect(() => {
@@ -142,6 +141,7 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
     const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
 
     detenerCamara();
+    setFlashActivado(false);
     setPreview(dataUrl);
     setModo("preview");
     procesarImagenBase64(dataUrl);
@@ -200,24 +200,44 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
     };
   }, [modo, capturarFrame]);
 
-  const abrirCamara = async () => {
+  const abrirCamara = async (conFlash: boolean = flashActivado) => {
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      });
+      const constraints: any = {
+        video: { 
+          facingMode: { ideal: "environment" }, 
+          width: { ideal: 1920 }, 
+          height: { ideal: 1080 } 
+        }
+      };
+
+      // Intentamos pedir el flash desde el inicio si es posible (Chrome/Android)
+      if (conFlash) {
+        constraints.video.advanced = [{ torch: true }];
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
 
       const track = stream.getVideoTracks()[0];
-      if (track.getCapabilities) {
-         const capabilities = track.getCapabilities() as any;
-         if (capabilities.torch) {
-            setSoportaFlash(true);
-         }
+      const capabilities = track.getCapabilities ? (track.getCapabilities() as any) : {};
+      
+      if (capabilities.torch) {
+        setSoportaFlash(true);
+        // Si pedimos flash pero no prendió automáticamente, intentamos applyConstraints una vez
+        if (conFlash && !flashActivado) {
+          try {
+            await track.applyConstraints({ advanced: [{ torch: true }] } as any);
+            setFlashActivado(true);
+          } catch (e) {
+            console.warn("No se pudo forzar flash tras reinicio:", e);
+          }
+        }
       }
 
       prevFrameRef.current = null;
@@ -234,34 +254,27 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
   const toggleFlash = async () => {
     if (!streamRef.current) return;
     const track = streamRef.current.getVideoTracks()[0];
+    const nuevoEstado = !flashActivado;
     
     try {
-        const nuevoEstado = !flashActivado;
-        
-        // En iOS/Safari o ciertos Android, applyConstraints puede "matar" el stream si no le gusta el comando.
-        // Intentamos aplicarlo de la forma más limpia posible.
+        // Intentamos el camino normal (sin reiniciar)
         await track.applyConstraints({
             advanced: [{ torch: nuevoEstado }]
         } as any);
-        
         setFlashActivado(nuevoEstado);
 
-        // Verificación de integridad: si el video se pausó o se puso negro, intentamos recuperarlo.
+        // Si la cámara se pausó o se ve negra (readyState < 2), forzamos reinicio rápido
         setTimeout(() => {
           if (videoRef.current && videoRef.current.readyState < 2) {
-             console.warn("Stream detectado como no-listo tras flash. Reiniciando...");
-             abrirCamara();
+             abrirCamara(nuevoEstado);
           }
-        }, 500);
+        }, 300);
 
     } catch (e) {
-        console.warn("Error crítico al conmutar flash:", e);
-        // Si falló, lo más probable es que el stream siga vivo pero sin flash. 
-        // No cambiamos el estado para que el usuario no vea el botón como "prendido".
-        setFlashActivado(false);
-        
-        // Si la pantalla quedó negra, forzamos reinicio de cámara
-        abrirCamara();
+        console.warn("applyConstraints falló, intentando reinicio de stream con flash:", e);
+        // Si falla el comando directo, reiniciamos la cámara pidiendo el flash desde cero
+        setFlashActivado(nuevoEstado);
+        abrirCamara(nuevoEstado);
     }
   };
 
