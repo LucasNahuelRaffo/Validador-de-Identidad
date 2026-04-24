@@ -8,7 +8,7 @@ import ResultadoValidacion from "@/components/ResultadoValidacion";
 import { QRCodeSVG } from 'qrcode.react';
 import { getSupabase } from "@/lib/supabase";
 
-type Paso = "verificando" | "qr_desktop" | "dniFrente" | "dniDorso" | "selfie" | "procesando" | "resultado" | "error";
+type Paso = "verificando" | "qr_desktop" | "dniFrente" | "dniDorso" | "selfie" | "procesando" | "resultado" | "error" | "expirado";
 
 export default function ValidacionPage() {
   const { token } = useParams<{ token: string }>();
@@ -23,23 +23,29 @@ export default function ValidacionPage() {
   const [resultado, setResultado] = useState<{ estado: "aprobado" | "rechazado"; similitud: number } | null>(null);
   const [mensajeError, setMensajeError] = useState<string>("");
   const [progresoMsg, setProgresoMsg] = useState("Verificando identidad...");
+  const [expiracion, setExpiracion] = useState<{ razon: string; mensaje: string } | null>(null);
 
   useEffect(() => {
     fetch(`/api/validaciones/${token}`)
-      .then((res) => {
+      .then(async (res) => {
+        if (res.status === 410) {
+          const data = await res.json();
+          setExpiracion({ razon: data.razon, mensaje: data.mensaje });
+          setPaso("expirado");
+          return;
+        }
         if (!res.ok) {
-          setMensajeError("Este link de validación no es válido o ya expiró.");
+          setMensajeError("Este link de validación no es válido.");
           setPaso("error");
           return;
         }
 
-        // Detección rudimentaria de Desktop
         const ua = navigator.userAgent;
         if (/Mobi|Android/i.test(ua)) {
           setPaso("dniFrente");
         } else {
           setIsDesktop(true);
-          setPaso("qr_desktop"); // PC user!
+          setPaso("qr_desktop");
         }
       })
       .catch(() => {
@@ -329,6 +335,60 @@ export default function ValidacionPage() {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {paso === "expirado" && expiracion && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 flex flex-col items-center text-center gap-5">
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center ${
+              expiracion.razon === "aprobado" 
+                ? "bg-green-50" 
+                : expiracion.razon === "intentos" 
+                  ? "bg-orange-50" 
+                  : "bg-slate-100"
+            }`}>
+              {expiracion.razon === "aprobado" ? (
+                <svg className="w-10 h-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ) : expiracion.razon === "intentos" ? (
+                <svg className="w-10 h-10 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              ) : (
+                <svg className="w-10 h-10 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              )}
+            </div>
+
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">
+                {expiracion.razon === "aprobado" 
+                  ? "Verificación ya completada" 
+                  : "Este enlace ya no está disponible"}
+              </h2>
+              <p className="text-sm text-slate-500 mt-3 leading-relaxed">
+                {expiracion.mensaje}
+              </p>
+            </div>
+
+            <div className="w-full bg-slate-50 rounded-xl p-4 border border-slate-100">
+              <p className="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">¿Qué hacer?</p>
+              <p className="text-sm text-slate-600">
+                {expiracion.razon === "aprobado" 
+                  ? "Tu identidad ya fue verificada correctamente. No es necesario hacer nada más."
+                  : "Solicitá un nuevo enlace de verificación para continuar con el proceso."
+                }
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-slate-400 mt-2">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              Verificación protegida con encriptación de extremo a extremo
+            </div>
           </div>
         )}
 
