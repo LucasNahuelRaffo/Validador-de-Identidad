@@ -35,12 +35,21 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [soportaFlash, setSoportaFlash] = useState(false);
+  const [flashActivado, setFlashActivado] = useState(false);
+
   const tiempoEstableRef = useRef<number>(0);
   const prevFrameRef = useRef<ImageData | null>(null);
   const isCapturingRef = useRef(false);
 
   const detenerCamara = useCallback(() => {
     if (streamRef.current) {
+      if (flashActivado) {
+        try {
+          const track = streamRef.current.getVideoTracks()[0];
+          track.applyConstraints({ advanced: [{ torch: false }] } as any);
+        } catch(e) {}
+      }
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
@@ -49,7 +58,8 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
     }
     prevFrameRef.current = null;
     isCapturingRef.current = false;
-  }, []);
+    setFlashActivado(false);
+  }, [flashActivado]);
 
   useEffect(() => {
     return () => detenerCamara();
@@ -201,6 +211,15 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
+
+      const track = stream.getVideoTracks()[0];
+      if (track.getCapabilities) {
+         const capabilities = track.getCapabilities() as any;
+         if (capabilities.torch) {
+            setSoportaFlash(true);
+         }
+      }
+
       prevFrameRef.current = null;
       tiempoEstableRef.current = 0;
       setCountdown(null);
@@ -209,6 +228,18 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
     } catch (err) {
       console.error(err);
       setError("No se pudo acceder a la cámara trasera. Verificá los permisos del navegador.");
+    }
+  };
+
+  const toggleFlash = async () => {
+    if (!streamRef.current) return;
+    const track = streamRef.current.getVideoTracks()[0];
+    try {
+        const nuevoEstado = !flashActivado;
+        await track.applyConstraints({ advanced: [{ torch: nuevoEstado }] } as any);
+        setFlashActivado(nuevoEstado);
+    } catch (e) {
+        console.warn("Flash no activado", e);
     }
   };
 
@@ -234,8 +265,8 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
           </h3>
           <p className="text-xs text-blue-700 mt-0.5 leading-relaxed">
             {tipo === "frente" 
-              ? "Enfocá el frente de tu DNI de modo que los bordes encajen en el recuadro automático."
-              : "Enfocá el dorso de tu DNI. Asegurate de que se vea bien el código de barras."}
+              ? "Sostené tu DNI de forma horizontal y enfocalo para que encaje dentro del recuadro."
+              : "Sostené el dorso de tu DNI de forma horizontal. Asegurá que el código de barras se vea bien claro."}
           </p>
         </div>
       </div>
@@ -262,10 +293,10 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
              <div className="absolute inset-0 bg-black/40 transition-opacity"></div>
              
-             {/* Marco dinámico transparente */}
+             {/* Marco dinámico transparente HORIZONTAL */}
              <div 
                id="dni-guide"
-               className={`relative w-[85%] aspect-[5.5/8.5] sm:aspect-[8.5/5.5] border-2 rounded-xl bg-transparent overflow-hidden transition-all duration-300 ${countdown !== null ? "border-green-400 shadow-[0_0_0_9999px_rgba(34,197,94,0.15)]" : "border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]"}`}
+               className={`relative w-[85%] aspect-[8.5/5.5] border-2 rounded-xl bg-transparent overflow-hidden transition-all duration-300 ${countdown !== null ? "border-green-400 shadow-[0_0_0_9999px_rgba(34,197,94,0.15)]" : "border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]"}`}
              >
                 <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white opacity-80 rounded-tl-lg"></div>
                 <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white opacity-80 rounded-tr-lg"></div>
@@ -273,6 +304,17 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
                 <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white opacity-80 rounded-br-lg"></div>
              </div>
           </div>
+
+          {soportaFlash && (
+            <button 
+               onClick={toggleFlash}
+               className={`absolute top-4 right-4 z-10 w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md transition-all shadow-lg border ${flashActivado ? 'bg-yellow-400 text-yellow-900 border-yellow-300' : 'bg-black/50 text-white border-white/20 hover:bg-black/70'}`}
+            >
+               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+               </svg>
+            </button>
+          )}
 
           <div className="absolute bottom-10 left-0 right-0 flex justify-center pointer-events-none px-4">
              <AnimatePresence mode="wait">
