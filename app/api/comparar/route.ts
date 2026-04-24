@@ -162,18 +162,18 @@ export async function POST(req: Request) {
 
     const supabase = getSupabase();
     
-    // Subir imagenes a Storage si configuró el bucket, si falla silenciar para no romper
-    try {
-      await supabase.storage.from("validaciones").upload(`${token}/dni.${extDni}`, bufDni, {
-        contentType: mimeDni,
-        upsert: true
-      });
-      await supabase.storage.from("validaciones").upload(`${token}/selfie.${extSelfie}`, bufSelfie, {
-        contentType: mimeSelfie,
-        upsert: true
-      });
-    } catch (err) {
-      console.warn("No se pudo subir imágenes al Storage, verifica si creaste el bucket llamado 'validaciones'", err);
+    // Subir imagenes a Storage si configuró el bucket
+    const uploadDni = await supabase.storage.from("validaciones").upload(`${token}/dni.${extDni}`, bufDni, {
+      contentType: mimeDni,
+      upsert: true
+    });
+    const uploadSelfie = await supabase.storage.from("validaciones").upload(`${token}/selfie.${extSelfie}`, bufSelfie, {
+      contentType: mimeSelfie,
+      upsert: true
+    });
+    
+    if (uploadDni.error || uploadSelfie.error) {
+      console.error("[Storage Upload Error] DNI:", uploadDni.error, "Selfie:", uploadSelfie.error);
     }
 
     await supabase.from("validaciones").update({
