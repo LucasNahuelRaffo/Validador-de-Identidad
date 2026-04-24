@@ -87,14 +87,25 @@ export default function SelfieCapture({ onCaptura }: Props) {
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
 
+    // Detener el timer manual si existe
+    if (manualTimerRef.current) {
+      clearTimeout(manualTimerRef.current);
+      manualTimerRef.current = null;
+    }
+
+    // Capturar frame actual
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+
+    // Verificación de liveness: comparar con frame capturado antes
     const frame2 = capturarFrameData();
     const frame1 = primerFrameCapturaRef.current;
-
-    // 1. Verificación básica de liveness por movimiento (ya existente)
     if (frame1 && frame2) {
-      const ctx = canvas.getContext("2d")!;
       const mov = calcularMovimiento(ctx, frame1, frame2);
-      if (mov < 0.025) {
+      if (mov < 0.02) {
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         setModo("idle");
@@ -103,27 +114,20 @@ export default function SelfieCapture({ onCaptura }: Props) {
       }
     }
 
-    const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-
-    // 2. Verificación Anti-Fraude OCR & Proporción (Reforzada)
+    // Anti-fraude: chequear si es un documento (solo si la detección facial NO funcionó)
+    // En el servidor se valida la proporción facial con Jimp, así que
+    // este chequeo OCR es una capa extra, no bloqueante
     setProcesandoOcr(true);
     try {
-      // Regla de Tamaño: Si la cara en la selfie es muy pequeña (como en un carnet), sospechamos de fraude
-      if (distanciaRef.current !== "perfecto") {
-        setError("⚠️ Seguridad: La cara está muy lejos o es muy pequeña. Acercate más para validar tu identidad.");
-        reintentar();
-        return;
-      }
-
-      const { data: { text } } = await Tesseract.recognize(dataUrl, "spa+eng");
-      const keywords = ["ARGENTINA", "DOCUMENTO", "NACIONAL", "REPUBLICA", "APELLIDO", "NOMBRE", "N°", "DOCUMENT", "IDENTITY", "47.", "20-"];
+      const { data: { text } } = await Tesseract.recognize(dataUrl, "spa+eng", { logger: () => {} });
+      const keywords = ["ARGENTINA", "DOCUMENTO", "NACIONAL", "REPUBLICA", "APELLIDO", "NOMBRE", "DOCUMENT", "IDENTITY"];
       const isDoc = keywords.some(k => text.toUpperCase().includes(k));
       
       if (isDoc) {
         setError("❌ INTENTO DE FRAUDE DETECTADO: Estás mostrando un documento físico. Poné tu CARA frente a la cámara.");
-        reintentar();
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        setModo("idle");
         return;
       }
     } catch (e) {
@@ -132,6 +136,7 @@ export default function SelfieCapture({ onCaptura }: Props) {
       setProcesandoOcr(false);
     }
 
+    // Éxito: parar cámara y enviar
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (requestRef.current) cancelAnimationFrame(requestRef.current);
