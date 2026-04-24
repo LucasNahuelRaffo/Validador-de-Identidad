@@ -177,8 +177,11 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
 
         const lineas = texto.split("\n");
         for (const rawLinea of lineas) {
-          // Tesseract lee < como <K o <L consistentemente.
-          const linea = rawLinea.replace(/<[KL](?=[A-Z])/g, "<");
+          // Tesseract lee < como <K, K<, <L, L< de forma inconsistente.
+          // Normalizamos ambas direcciones: <K→< y K<→<
+          const linea = rawLinea
+            .replace(/<[KL](?=[A-Z])/g, "<")
+            .replace(/([A-Z])[KL](?=<)/g, "$1<");
           
           // Estrategia 1: la línea tiene << reales
           if (linea.includes("<<") && !datosDni.nombre_mrz) {
@@ -229,11 +232,12 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
           }
         }
 
-        // Post-proceso: quitar K/L espuria al inicio de cada palabra
-        // (Tesseract lee < como K, dejando "KLUCAS" en vez de "LUCAS")
+        // Post-proceso: quitar K/L espuria de cada palabra del MRZ
         if (datosDni.nombre_mrz) {
           datosDni.nombre_mrz = datosDni.nombre_mrz.split(" ").map(w =>
-            w.replace(/^[KL](?=[A-Z]{2,})/, "")
+            w
+              .replace(/^[KL](?=[A-Z]{2,})/, "")  // Leading K/L (ej: KLUCAS → LUCAS)
+              .replace(/K$/, "")                   // Trailing K (ej: RAFFOK → RAFFO)
           ).filter(w => w.length >= 2).join(" ");
         }
       }
