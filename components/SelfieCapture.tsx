@@ -3,6 +3,7 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { FilesetResolver, FaceDetector } from "@mediapipe/tasks-vision";
 import { motion, AnimatePresence } from "framer-motion";
+import Tesseract from "tesseract.js";
 
 type Props = {
   onCaptura: (imagen: string) => void;
@@ -70,7 +71,9 @@ export default function SelfieCapture({ onCaptura }: Props) {
     return ctx.getImageData(0, 0, canvas.width, canvas.height);
   }, []);
 
-  const capturarYFinalizar = useCallback(() => {
+  const [procesandoOcr, setProcesandoOcr] = useState(false);
+
+  const capturarYFinalizar = useCallback(async () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
@@ -78,6 +81,7 @@ export default function SelfieCapture({ onCaptura }: Props) {
     const frame2 = capturarFrameData();
     const frame1 = primerFrameCapturaRef.current;
 
+    // 1. Verificación básica de liveness por movimiento (ya existente)
     if (frame1 && frame2) {
       const ctx = canvas.getContext("2d")!;
       const mov = calcularMovimiento(ctx, frame1, frame2);
@@ -85,7 +89,7 @@ export default function SelfieCapture({ onCaptura }: Props) {
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         setModo("idle");
-        setError("Parece que mostraste una foto tapada. Mirá directo a la cámara y movete levemente.");
+        setError("Parece que mostraste una foto estática. Mirá directo a la cámara y movete levemente.");
         return;
       }
     }
@@ -93,6 +97,25 @@ export default function SelfieCapture({ onCaptura }: Props) {
     const ctx = canvas.getContext("2d")!;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+
+    // 2. Verificación Anti-Fraude OCR (Nueva)
+    // Buscamos palabras típicas de documentos en la foto de perfil para evitar que suban el DNI como selfie
+    setProcesandoOcr(true);
+    try {
+      const { data: { text } } = await Tesseract.recognize(dataUrl, "spa+eng");
+      const keywords = ["ARGENTINA", "DOCUMENTO", "NACIONAL", "REPUBLICA", "APELLIDO", "NOMBRE", "N°", "DOCUMENT", "IDENTITY"];
+      const isDoc = keywords.some(k => text.toUpperCase().includes(k));
+      
+      if (isDoc) {
+        setError("⚠️ Seguridad: Se detectó un documento en lugar de un rostro vivo. Por favor mostrá solo tu cara.");
+        reintentar();
+        return;
+      }
+    } catch (e) {
+      console.warn("OCR skip en selfie:", e);
+    } finally {
+      setProcesandoOcr(false);
+    }
 
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
@@ -285,9 +308,19 @@ export default function SelfieCapture({ onCaptura }: Props) {
 
       {modo === "preview" && preview && (
         <div className="space-y-3">
-          <div className="relative rounded-2xl overflow-hidden aspect-[3/4] bg-black">
+          <div className="relative rounded-2xl overflow-hidden aspect-[3/4] bg-black border-2 border-slate-200">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={preview} alt="Selfie" className="w-full h-full object-cover scale-x-[-1]" />
+
+            {procesandoOcr && (
+              <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center gap-4 text-center px-6">
+                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <div>
+                  <p className="text-white font-bold">Analizando seguridad...</p>
+                  <p className="text-blue-200 text-[10px] uppercase tracking-widest mt-1">Verificación Anti-Suplantación</p>
+                </div>
+              </div>
+            )}
           </div>
           <button
             onClick={reintentar}

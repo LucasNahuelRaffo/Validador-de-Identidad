@@ -11,7 +11,7 @@ const FACEPP_COMPARE  = "https://api-us.faceplusplus.com/facepp/v3/compare";
 const FACEPP_LIVENESS = "https://api-us.faceplusplus.com/facepp/v1/faceliveness";
 
 const UMBRAL_CONFIANZA = 70;
-const UMBRAL_LIVENESS = 50;
+const UMBRAL_LIVENESS = 80;
 
 function parseDataUrl(dataUrl: string): { mime: string; b64: string } {
   const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
