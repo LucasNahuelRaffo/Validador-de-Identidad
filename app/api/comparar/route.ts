@@ -137,7 +137,26 @@ export async function POST(req: Request) {
       );
     }
 
+    // ── 3. Protecciones de Seguridad (Anti-spoofing manual) ──
+    // Si la imagen es exactamente el mismo archivo:
+    if (b64Dni === b64Selfie) {
+      return NextResponse.json(
+        { error: "La selfie cargada es exactamente el mismo archivo que el DNI. Por favor, tomate una selfie real." },
+        { status: 422 }
+      );
+    }
+
     const confianza: number = dataCompare.confidence;
+    
+    // Si la similitud es sospechosamente alta (> 95%), casi seguro es una foto de una foto.
+    // Una selfie real contra un DNI impreso muy raramente supera el 90-95% por diferencias de luz, cámara, textura, etc.
+    if (confianza > 95) {
+      return NextResponse.json(
+        { error: "La selfie detectada es sospechosamente idéntica a la del DNI (posible foto de una foto). Por favor, tomate una selfie real en vivo." },
+        { status: 422 }
+      );
+    }
+
     const similitud = confianza / 100;
     const estado: ValidacionUpdate["estado"] = confianza >= UMBRAL_CONFIANZA ? "aprobado" : "rechazado";
 
