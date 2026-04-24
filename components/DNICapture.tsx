@@ -91,7 +91,7 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         
         const upperTexto = texto.toUpperCase();
         const isFrente = /(APELLIDO|NOMBRE|TRAMITE|EJEMPLAR|SEXO|NACIMIENTO|REPUBLICA|ARGENTINA|NACIONAL|IDENTIDAD)/.test(upperTexto);
-        const isDorso = /(IDARG|<<)/.test(upperTexto) || /[KL]{2,}/.test(upperTexto);
+        const isDorso = /(IDARG|<<)/.test(upperTexto);
 
         if (!isFrente && !isDorso) {
           throw new Error("No pudimos reconocer el DNI. Asegurate de que sea un DNI Argentino y esté bien enfocado.");
@@ -152,7 +152,7 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         
         const upperTexto = texto.toUpperCase();
         const isFrente = /(APELLIDO|TRAMITE|EJEMPLAR|SEXO|NACIMIENTO|REPUBLICA|ARGENTINA|NACIONAL|IDENTIDAD)/.test(upperTexto);
-        const isDorso = /(IDARG|<<)/.test(upperTexto) || /[KL]{2,}/.test(upperTexto);
+        const isDorso = /(IDARG|<<)/.test(upperTexto);
 
         if (!isFrente && !isDorso) {
           throw new Error("No pudimos reconocer el dorso del DNI. Asegurate de que sea un DNI Argentino y haya buena luz.");
