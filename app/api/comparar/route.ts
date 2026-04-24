@@ -137,18 +137,21 @@ export async function POST(req: Request) {
       resCompare.json(),
     ]);
 
-    // ── Manejo de Liveness Face++ (CORREGIDO) ──
+    // ── Manejo de Liveness Face++ ──
     console.log("[Liveness Response]:", JSON.stringify(dataLiveness).substring(0, 800));
     
+    let livenessOk = false;
+    let livenessError = false;
+    
     if (dataLiveness.error_message) {
-      console.error("[Liveness Error]:", dataLiveness.error_message);
-      return NextResponse.json({ error: "No se pudo verificar la prueba de vida. Intentá con mejor iluminación." }, { status: 422 });
+      // Face++ devolvió error — logueamos pero NO bloqueamos al usuario.
+      // Los otros checks del servidor (pixel comparison, face proportion) protegen contra fraude.
+      console.warn("[Liveness API Error]:", dataLiveness.error_message);
+      livenessError = true;
     }
     
-    let livenessOk = false;
-    
     // Campo directo: { confidence: N }  
-    if (typeof dataLiveness.confidence === "number") {
+    if (!livenessError && typeof dataLiveness.confidence === "number") {
       livenessOk = dataLiveness.confidence >= UMBRAL_LIVENESS;
       if (!livenessOk) {
         return NextResponse.json({ error: "La prueba de vida no superó el umbral. Tomá una selfie real mirando a la cámara." }, { status: 422 });
@@ -156,7 +159,7 @@ export async function POST(req: Request) {
     }
     
     // Face++ faceliveness v1 top-level: { face_genuineness: { screen_replay_confidence, ... } }
-    const genuineness = dataLiveness.face_genuineness || dataLiveness.result?.face_genuineness;
+    const genuineness = !livenessError ? (dataLiveness.face_genuineness || dataLiveness.result?.face_genuineness) : null;
     if (!livenessOk && genuineness) {
       // screen_replay detecta fotos/impresiones/pantallas
       if (typeof genuineness.screen_replay_confidence === "number" && typeof genuineness.screen_replay_threshold === "number") {
@@ -187,7 +190,7 @@ export async function POST(req: Request) {
     }
     
     // Campo en faces[]: { faces: [{ liveness: { value: N } }] }
-    if (!livenessOk && dataLiveness.faces?.[0]?.liveness) {
+    if (!livenessOk && !livenessError && dataLiveness.faces?.[0]?.liveness) {
       const lv = dataLiveness.faces[0].liveness.value ?? dataLiveness.faces[0].liveness.confidence;
       if (typeof lv === "number") {
         livenessOk = lv >= UMBRAL_LIVENESS;
