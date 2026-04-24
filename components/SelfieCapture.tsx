@@ -134,6 +134,7 @@ export default function SelfieCapture({ onCaptura }: Props) {
 
   useEffect(() => {
     let active = true;
+    let frameTimestamp = 0;
 
     const detectFrame = () => {
       if (!active || !videoRef.current || modo === "preview" || modo === "idle" || !detectorRef.current) return;
@@ -142,47 +143,64 @@ export default function SelfieCapture({ onCaptura }: Props) {
       const detector = detectorRef.current;
 
       if (video.readyState >= 2) {
-        const startTime = performance.now();
-        const detections = detector.detectForVideo(video, startTime);
+        // Usamos un timestamp monotónicamente creciente para evitar
+        // que MediaPipe rechace frames en Samsung/Android
+        frameTimestamp += 33; // ~30fps
+        
         let newStatus: Distancia = "buscando";
+        
+        try {
+          const detections = detector.detectForVideo(video, frameTimestamp);
 
-        if (detections.detections.length > 0) {
-          const faces = [...detections.detections].sort((a, b) => b.boundingBox!.width - a.boundingBox!.width);
-          const bestFace = faces[0].boundingBox!;
-          const videoWidth = video.videoWidth || 1;
-          const videoHeight = video.videoHeight || 1;
-          const shortSide = Math.min(videoWidth, videoHeight);
-          const normalizedWidth = bestFace.width / shortSide;
+          if (detections.detections.length > 0) {
+            const faces = [...detections.detections].sort((a, b) => b.boundingBox!.width - a.boundingBox!.width);
+            const bestFace = faces[0].boundingBox!;
+            const videoWidth = video.videoWidth || 1;
+            const videoHeight = video.videoHeight || 1;
+            const shortSide = Math.min(videoWidth, videoHeight);
+            const normalizedWidth = bestFace.width / shortSide;
 
-          if (normalizedWidth < 0.23) {
-            newStatus = "lejos";
-          } else if (normalizedWidth > 0.65) {
-            newStatus = "cerca";
-          } else {
-            newStatus = "perfecto";
+            if (normalizedWidth < 0.20) {
+              newStatus = "lejos";
+            } else if (normalizedWidth > 0.70) {
+              newStatus = "cerca";
+            } else {
+              newStatus = "perfecto";
+            }
           }
+        } catch (e) {
+          // Si MediaPipe falla en un frame, seguimos intentando
+          console.warn("Face detection frame skip:", e);
         }
 
+        // Actualizar UI del estado de distancia
         if (newStatus !== distanciaRef.current) {
           distanciaRef.current = newStatus;
           setDistancia(newStatus);
-          if (newStatus === "perfecto") {
+        }
+
+        // Manejar countdown independientemente del cambio de estado
+        if (newStatus === "perfecto") {
+          if (tiempoPerfectoRef.current === 0) {
             tiempoPerfectoRef.current = performance.now();
             primerFrameCapturaRef.current = capturarFrameData();
             setCountdown(3);
           } else {
+            const transcurrido = performance.now() - tiempoPerfectoRef.current;
+            if (transcurrido > 3000) {
+              capturarYFinalizar();
+              return;
+            } else if (transcurrido > 2000) {
+              setCountdown(1);
+            } else if (transcurrido > 1000) {
+              setCountdown(2);
+            }
+          }
+        } else {
+          // Resetear countdown si la cara sale del rango perfecto
+          if (tiempoPerfectoRef.current !== 0) {
             tiempoPerfectoRef.current = 0;
             setCountdown(null);
-          }
-        } else if (newStatus === "perfecto" && tiempoPerfectoRef.current > 0) {
-          const transcurrido = performance.now() - tiempoPerfectoRef.current;
-          if (transcurrido > 3000) {
-            capturarYFinalizar();
-            return;
-          } else if (transcurrido > 2000) {
-            setCountdown(1);
-          } else if (transcurrido > 1000) {
-            setCountdown(2);
           }
         }
       }
@@ -190,6 +208,7 @@ export default function SelfieCapture({ onCaptura }: Props) {
     };
 
     if (modo === "camara") {
+      frameTimestamp = 0;
       requestRef.current = requestAnimationFrame(detectFrame);
     }
 
