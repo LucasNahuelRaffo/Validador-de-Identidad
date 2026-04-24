@@ -154,9 +154,64 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No se detectó un rostro claro en alguna de las fotos." }, { status: 422 });
     }
 
-    // Protecciones Anti-spoofing
+    // ── Protecciones Anti-spoofing (Blindaje del Servidor) ──
+    
+    // Check 1: Comparación binaria directa
     if (b64Dni === b64Selfie) {
-      return NextResponse.json({ error: "Subiste el mismo archivo en dos pasos iguales." }, { status: 422 });
+      return NextResponse.json({ error: "Subiste el mismo archivo en dos pasos distintos." }, { status: 422 });
+    }
+
+    // Check 2: Similitud pixel-a-pixel entre DNI y Selfie
+    // Si alguien saca foto del DNI para usarla como selfie, las imágenes serán muy parecidas
+    try {
+      const imgDni = await Jimp.read(bufDni);
+      const imgSelfie = await Jimp.read(bufSelfie);
+      // Normalizamos ambas a 200x200 para comparar rápido
+      const size = 200;
+      imgDni.resize({ w: size, h: size });
+      imgSelfie.resize({ w: size, h: size });
+      let matchPixels = 0;
+      const totalPixels = size * size;
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const c1 = Jimp.intToRGBA(imgDni.getPixelColor(x, y));
+          const c2 = Jimp.intToRGBA(imgSelfie.getPixelColor(x, y));
+          const diff = Math.abs(c1.r - c2.r) + Math.abs(c1.g - c2.g) + Math.abs(c1.b - c2.b);
+          if (diff < 80) matchPixels++;
+        }
+      }
+      const similarity = matchPixels / totalPixels;
+      if (similarity > 0.60) {
+        return NextResponse.json({ 
+          error: "⚠️ Fraude detectado: La selfie es demasiado similar al documento. Tomá una foto real de tu rostro." 
+        }, { status: 422 });
+      }
+    } catch (pixelErr) {
+      console.warn("Pixel comparison skip:", pixelErr);
+    }
+
+    // Check 3: Verificar que la cara en la selfie ocupa un porcentaje razonable del frame
+    // En un DNI, la cara ocupa ~15-25% del frame. En una selfie real, ocupa ~40-70%.
+    if (dataCompare.faces2?.length > 0) {
+      const selfieBox = dataCompare.faces2[0].face_rectangle;
+      if (selfieBox) {
+        // Face++ no da el tamaño total de la imagen directamente,
+        // pero podemos inferir si la cara es proporcionalmente pequeña
+        const faceArea = selfieBox.width * selfieBox.height;
+        const faceTop = selfieBox.top;
+        const faceLeft = selfieBox.left;
+        // Si la cara está muy arriba-izquierda y es pequeña, es sospechoso
+        const estimatedImgWidth = faceLeft + selfieBox.width + faceLeft; // rough estimate
+        const estimatedImgHeight = faceTop + selfieBox.height + faceTop;
+        const estimatedTotalArea = estimatedImgWidth * estimatedImgHeight;
+        const faceRatio = faceArea / Math.max(estimatedTotalArea, 1);
+        
+        if (faceRatio < 0.08) {
+          return NextResponse.json({ 
+            error: "La cara en la selfie es muy pequeña. Acercate más a la cámara." 
+          }, { status: 422 });
+        }
+      }
     }
 
     const confianza: number = dataCompare.confidence;

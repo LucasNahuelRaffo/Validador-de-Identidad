@@ -87,19 +87,47 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
       if (tipo === "frente") {
         const { data } = await Tesseract.recognize(compressedDataUrl, "spa", { logger: () => {} });
         const texto = data.text;
+        const lines = texto.split("\n").map((l) => l.trim()).filter((l) => l.length > 1);
         
-        // Normalizamos el texto (quitamos puntos y espacios de números)
-        const textoLimpio = texto.replace(/[.,\s]/g, "");
-        const matchDni = textoLimpio.match(/\b(\d{7,8})\b/);
-        if (matchDni) datosDni.numero = matchDni[1];
+        // 1. Buscar número de documento: buscar patrones como "47.635.708" o "47635708"
+        // Primero buscamos el formato con puntos (más confiable)
+        const matchConPuntos = texto.match(/(\d{1,2}[.\s]\d{3}[.\s]\d{3})/);
+        if (matchConPuntos) {
+          datosDni.numero = matchConPuntos[1].replace(/[.\s]/g, "");
+        } else {
+          // Fallback: buscar secuencia de 7-8 dígitos en cualquier parte
+          const allDigitMatches = texto.match(/\d+/g);
+          if (allDigitMatches) {
+            const candidato = allDigitMatches.find(d => d.length >= 7 && d.length <= 8);
+            if (candidato) datosDni.numero = candidato;
+          }
+        }
         
-        // Buscamos el nombre ignorando cabeceras institucionales
-        const cabeceras = ["REPUBLICA", "NACIONAL", "PERSONAS", "MINISTERIO", "INTERIOR", "ARGENTINA", "MERCOSUR"];
-        const lines = texto.split("\n")
-          .map((l) => l.trim())
-          .filter((l) => l.length > 3 && !cabeceras.some(c => l.toUpperCase().includes(c)));
+        // 2. Buscar nombre y apellido por contexto de las cabeceras del DNI
+        let apellido = "";
+        let nombre = "";
+        for (let i = 0; i < lines.length; i++) {
+          const upper = lines[i].toUpperCase();
+          // Si la línea es la cabecera "Apellido / Surname", el valor está en la siguiente línea
+          if ((upper.includes("APELLIDO") || upper.includes("SURNAME")) && i + 1 < lines.length) {
+            const nextLine = lines[i + 1].trim();
+            // Verificar que no es otra cabecera
+            if (nextLine.length > 1 && !nextLine.toUpperCase().includes("NOMBRE") && !nextLine.toUpperCase().includes("NAME")) {
+              apellido = nextLine;
+            }
+          }
+          // Si la línea es la cabecera "Nombre / Name", el valor está en la siguiente línea
+          if ((upper.includes("NOMBRE") || upper.includes("NAME")) && !upper.includes("SURNAME") && i + 1 < lines.length) {
+            const nextLine = lines[i + 1].trim();
+            if (nextLine.length > 1 && !nextLine.toUpperCase().includes("SEXO") && !nextLine.toUpperCase().includes("SEX")) {
+              nombre = nextLine;
+            }
+          }
+        }
         
-        if (lines[0]) datosDni.nombre_raw = lines[0];
+        if (apellido || nombre) {
+          datosDni.nombre_raw = [apellido, nombre].filter(Boolean).join(" ");
+        }
       }
 
       onCaptura(compressedDataUrl, tipo === "frente" ? datosDni : undefined);
