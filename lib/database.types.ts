@@ -10,6 +10,7 @@ export type Database = {
           estado: "pendiente" | "aprobado" | "rechazado";
           similitud_facial: number | null;
           datos_dni: Record<string, string> | null;
+          intentos: number | null;
           creado_en: string;
           actualizado_en: string;
         };
@@ -21,6 +22,7 @@ export type Database = {
           estado?: "pendiente" | "aprobado" | "rechazado";
           similitud_facial?: number | null;
           datos_dni?: Record<string, string> | null;
+          intentos?: number | null;
           creado_en?: string;
           actualizado_en?: string;
         };
@@ -32,6 +34,7 @@ export type Database = {
           estado?: "pendiente" | "aprobado" | "rechazado";
           similitud_facial?: number | null;
           datos_dni?: Record<string, string> | null;
+          intentos?: number | null;
           creado_en?: string;
           actualizado_en?: string;
         };

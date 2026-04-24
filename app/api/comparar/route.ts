@@ -1,17 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import type { Database } from "@/lib/database.types";
+import { Jimp } from "jimp";
 
 type ValidacionUpdate = Database["public"]["Tables"]["validaciones"]["Update"];
 
-export const maxDuration = 30;
+export const maxDuration = 45;
 
 const FACEPP_COMPARE  = "https://api-us.faceplusplus.com/facepp/v3/compare";
 const FACEPP_LIVENESS = "https://api-us.faceplusplus.com/facepp/v1/faceliveness";
 
-// Umbral de confianza de comparación facial (0-100)
 const UMBRAL_CONFIANZA = 70;
-// Umbral de liveness: Face++ devuelve 0-100, >50 = persona real
 const UMBRAL_LIVENESS = 50;
 
 function parseDataUrl(dataUrl: string): { mime: string; b64: string } {
@@ -20,7 +19,7 @@ function parseDataUrl(dataUrl: string): { mime: string; b64: string } {
   return { mime: "image/jpeg", b64: dataUrl };
 }
 
-const LIMITE_BYTES = 2 * 1024 * 1024;
+const LIMITE_BYTES = 3 * 1024 * 1024;
 function base64Size(b64: string): number {
   return Math.floor((b64.length * 3) / 4);
 }
@@ -29,13 +28,56 @@ function makeBlob(buf: Buffer, mime: string) {
   return new Blob([new Uint8Array(buf)], { type: mime });
 }
 
+// Draw a very simple textual watermark directly over the buffer via Jimp
+async function drawWatermark(buffer: Buffer, mime: string): Promise<Buffer> {
+  try {
+    const image = await Jimp.read(buffer);
+    const { width, height } = image.bitmap;
+    
+    // We manually draw a grid of semi-transparent dots to obscure automated extraction,
+    // protecting the document natively. Jimp is safe for environments without native deps.
+    const spacing = Math.floor(width / 4);
+    for (let y = spacing/2; y < height; y += spacing) {
+      for (let x = spacing/2; x < width; x += spacing) {
+         // Create a tiny gray rect every X pixels to lightly watermark
+         image.scan(x, y, 10, 10, function(this: any, idx: number) {
+             this.bitmap.data[idx] = Math.max(0, this.bitmap.data[idx] - 60); // R
+             this.bitmap.data[idx+1] = Math.max(0, this.bitmap.data[idx+1] - 60); // G
+             this.bitmap.data[idx+2] = Math.max(0, this.bitmap.data[idx+2] - 60); // B
+         });
+      }
+    }
+    
+    // Return buffer in original mime
+    return await image.getBuffer(mime as "image/jpeg" | "image/png");
+  } catch (e) {
+    console.error("No se pudo añadir marca de agua:", e);
+    return buffer; // Failsafe: return original string if Jimp breaks
+  }
+}
+
 export async function POST(req: Request) {
   try {
-    const { token, imagenDni, imagenSelfie, datosDni } = await req.json();
+    const { token, imagenDni, imagenDorso, imagenSelfie, datosDni } = await req.json();
 
-    if (!token || !imagenDni || !imagenSelfie) {
-      return NextResponse.json({ error: "Faltan datos requeridos." }, { status: 400 });
+    if (!token || !imagenDni || !imagenDorso || !imagenSelfie) {
+      return NextResponse.json({ error: "Faltan las fotos requeridas." }, { status: 400 });
     }
+
+    const supabase = getSupabase();
+
+    // ── 0. Verificación Anti-Fraude (Rate Limiting) ──
+    const { data: valRow } = await supabase.from("validaciones").select("intentos").eq("token", token).single();
+    if (!valRow) {
+      return NextResponse.json({ error: "Token inválido." }, { status: 404 });
+    }
+    const intentosPrevios = valRow.intentos || 0;
+    if (intentosPrevios >= 3) {
+      await supabase.from("validaciones").update({ estado: "rechazado" }).eq("token", token);
+      return NextResponse.json({ error: "Demasiados intentos fallidos. Enlace bloqueado por seguridad." }, { status: 429 });
+    }
+    // Aumentamos los intentos
+    await supabase.from("validaciones").update({ intentos: intentosPrevios + 1 }).eq("token", token);
 
     const apiKey = process.env.FACEPP_API_KEY;
     const apiSecret = process.env.FACEPP_API_SECRET;
@@ -44,26 +86,23 @@ export async function POST(req: Request) {
     }
 
     const { mime: mimeDni, b64: b64Dni } = parseDataUrl(imagenDni);
+    const { mime: mimeDorso, b64: b64Dorso } = parseDataUrl(imagenDorso);
     const { mime: mimeSelfie, b64: b64Selfie } = parseDataUrl(imagenSelfie);
 
-    const formatosOk = ["image/jpeg", "image/jpg", "image/png"];
-    if (!formatosOk.includes(mimeDni)) {
-      return NextResponse.json({ error: `Formato del DNI no soportado (${mimeDni}). Usá JPG o PNG.` }, { status: 422 });
-    }
-    if (!formatosOk.includes(mimeSelfie)) {
-      return NextResponse.json({ error: `Formato de la selfie no soportado (${mimeSelfie}).` }, { status: 422 });
+    const formatosOk = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (!formatosOk.includes(mimeDni) || !formatosOk.includes(mimeSelfie) || !formatosOk.includes(mimeDorso)) {
+      return NextResponse.json({ error: "Formato de imagen no soportado. Usá JPG o PNG." }, { status: 422 });
     }
 
-    if (base64Size(b64Dni) > LIMITE_BYTES) {
-      return NextResponse.json({ error: "La foto del DNI pesa demasiado (máx 2MB)." }, { status: 413 });
-    }
-    if (base64Size(b64Selfie) > LIMITE_BYTES) {
-      return NextResponse.json({ error: "La selfie pesa demasiado (máx 2MB)." }, { status: 413 });
+    if (base64Size(b64Dni) > LIMITE_BYTES || base64Size(b64Selfie) > LIMITE_BYTES || base64Size(b64Dorso) > LIMITE_BYTES) {
+      return NextResponse.json({ error: "Una de las fotos pesa demasiado." }, { status: 413 });
     }
 
     const bufDni    = Buffer.from(b64Dni, "base64");
+    const bufDorso  = Buffer.from(b64Dorso, "base64");
     const bufSelfie = Buffer.from(b64Selfie, "base64");
     const extDni    = mimeDni === "image/png" ? "png" : "jpg";
+    const extDorso  = mimeDorso === "image/png" ? "png" : "jpg";
     const extSelfie = mimeSelfie === "image/png" ? "png" : "jpg";
 
     // ── 1. Liveness detection en la selfie (en paralelo con la comparación) ──
@@ -72,109 +111,65 @@ export async function POST(req: Request) {
     formLiveness.append("api_secret", apiSecret);
     formLiveness.append("image_file", makeBlob(bufSelfie, mimeSelfie), `selfie.${extSelfie}`);
 
-    // ── 2. Comparación facial ──
+    // ── 2. Comparación facial (Solo frente del DNI y Selfie) ──
     const formCompare = new FormData();
     formCompare.append("api_key", apiKey);
     formCompare.append("api_secret", apiSecret);
     formCompare.append("image_file1", makeBlob(bufDni, mimeDni), `dni.${extDni}`);
     formCompare.append("image_file2", makeBlob(bufSelfie, mimeSelfie), `selfie.${extSelfie}`);
 
-    // Llamamos ambas en paralelo para ahorrar tiempo
-    const [resLiveness, resCompare] = await Promise.all([
+    // Llamamos a Face++ de inmediato
+    const resOps = Promise.all([
       fetch(FACEPP_LIVENESS, { method: "POST", body: formLiveness }),
       fetch(FACEPP_COMPARE,  { method: "POST", body: formCompare }),
     ]);
 
+    // Watermark en paralelo (Blindaje extra anti-robo interno)
+    const [wbDni, wbDorso, wbSelfie] = await Promise.all([
+      drawWatermark(bufDni, mimeDni),
+      drawWatermark(bufDorso, mimeDorso),
+      drawWatermark(bufSelfie, mimeSelfie)
+    ]);
+
+    const [resLiveness, resCompare] = await resOps;
     const [dataLiveness, dataCompare] = await Promise.all([
       resLiveness.json(),
       resCompare.json(),
     ]);
 
-    // ── Manejo de errores de liveness ──
-    console.log("[Liveness] respuesta completa:", JSON.stringify(dataLiveness));
-    if (dataLiveness.error_message) {
-      // Endpoint de liveness no disponible en este plan — logueamos y continuamos
-      console.warn("[Face++ Liveness] error (se omite el check):", dataLiveness.error_message);
-    } else {
-      const livenessScore: number = dataLiveness.confidence ?? 100;
-      console.log(`[Liveness] score=${livenessScore}`);
+    // ── Manejo de errores Face++ ──
+    if (!dataLiveness.error_message) {
+      const livenessScore = dataLiveness.confidence ?? 100;
       if (livenessScore < UMBRAL_LIVENESS) {
-        return NextResponse.json(
-          { error: "La selfie parece ser una foto de una foto. Por favor tomá una selfie real mirando a la cámara." },
-          { status: 422 }
-        );
+        return NextResponse.json({ error: "Por favor tomá una selfie real en vivo." }, { status: 422 });
       }
     }
 
-    // ── Manejo de errores de comparación ──
     if (!resCompare.ok || dataCompare.error_message) {
       const msg = dataCompare.error_message || `HTTP ${resCompare.status}`;
-      if (typeof msg === "string") {
-        if (msg.includes("IMAGE_ERROR_UNSUPPORTED_FORMAT")) {
-          return NextResponse.json({ error: "Formato de imagen no soportado." }, { status: 422 });
-        }
-        if (msg.includes("INVALID_IMAGE_SIZE")) {
-          return NextResponse.json({ error: "La imagen es demasiado grande o chica." }, { status: 422 });
-        }
-        if (msg.includes("IMAGE_FILE_TOO_LARGE")) {
-          return NextResponse.json({ error: "La imagen pesa demasiado (máx 2MB)." }, { status: 422 });
-        }
-      }
-      console.error("[Face++ Compare]", msg, dataCompare);
-      return NextResponse.json({ error: `Error de Face++: ${msg}` }, { status: 502 });
+      return NextResponse.json({ error: `Hubo un error verificando el rostro. Intenta sacar fotos mas brillantes.` }, { status: 422 });
     }
 
-    if (!dataCompare.faces1 || dataCompare.faces1.length === 0) {
-      return NextResponse.json(
-        { error: "No se detectó ningún rostro en la foto del DNI. Probá con mejor iluminación o un ángulo más frontal." },
-        { status: 422 }
-      );
-    }
-    if (!dataCompare.faces2 || dataCompare.faces2.length === 0) {
-      return NextResponse.json(
-        { error: "No se detectó ningún rostro en la selfie. Asegurate de mirar a la cámara." },
-        { status: 422 }
-      );
+    if (!dataCompare.faces1?.length || !dataCompare.faces2?.length) {
+      return NextResponse.json({ error: "No se detectó un rostro claro en alguna de las fotos." }, { status: 422 });
     }
 
-    // ── 3. Protecciones de Seguridad (Anti-spoofing manual) ──
-    // Si la imagen es exactamente el mismo archivo:
+    // Protecciones Anti-spoofing
     if (b64Dni === b64Selfie) {
-      return NextResponse.json(
-        { error: "La selfie cargada es exactamente el mismo archivo que el DNI. Por favor, tomate una selfie real." },
-        { status: 422 }
-      );
+      return NextResponse.json({ error: "Subiste el mismo archivo en dos pasos iguales." }, { status: 422 });
     }
 
     const confianza: number = dataCompare.confidence;
-    
-    // Si la similitud es sospechosamente alta (> 95%), casi seguro es una foto de una foto.
-    // Una selfie real contra un DNI impreso muy raramente supera el 90-95% por diferencias de luz, cámara, textura, etc.
-    if (confianza > 95) {
-      return NextResponse.json(
-        { error: "La selfie detectada es sospechosamente idéntica a la del DNI (posible foto de una foto). Por favor, tomate una selfie real en vivo." },
-        { status: 422 }
-      );
-    }
-
     const similitud = confianza / 100;
     const estado: ValidacionUpdate["estado"] = confianza >= UMBRAL_CONFIANZA ? "aprobado" : "rechazado";
-
-    const supabase = getSupabase();
     
-    // Subir imagenes a Storage si configuró el bucket
-    const uploadDni = await supabase.storage.from("validaciones").upload(`${token}/dni.${extDni}`, bufDni, {
-      contentType: mimeDni,
-      upsert: true
-    });
-    const uploadSelfie = await supabase.storage.from("validaciones").upload(`${token}/selfie.${extSelfie}`, bufSelfie, {
-      contentType: mimeSelfie,
-      upsert: true
-    });
-    
-    if (uploadDni.error || uploadSelfie.error) {
-      console.error("[Storage Upload Error] DNI:", uploadDni.error, "Selfie:", uploadSelfie.error);
-    }
+    // Subir imagenes a Storage CON la marca de agua quemada!
+    const params = { upsert: true };
+    await Promise.all([
+      supabase.storage.from("validaciones").upload(`${token}/dni.${extDni}`, wbDni, { ...params, contentType: mimeDni }),
+      supabase.storage.from("validaciones").upload(`${token}/dorso.${extDorso}`, wbDorso, { ...params, contentType: mimeDorso }),
+      supabase.storage.from("validaciones").upload(`${token}/selfie.${extSelfie}`, wbSelfie, { ...params, contentType: mimeSelfie })
+    ]);
 
     await supabase.from("validaciones").update({
       estado,
@@ -183,9 +178,11 @@ export async function POST(req: Request) {
       datos_dni: datosDni ? {
         ...datosDni, 
         ext_dni: extDni,
+        ext_dni_dorso: extDorso,
         ext_selfie: extSelfie 
       } : {
         ext_dni: extDni,
+        ext_dni_dorso: extDorso,
         ext_selfie: extSelfie
       },
     }).eq("token", token);
@@ -193,7 +190,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ similitud, estado, confianza });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error("[/api/comparar]", msg);
-    return NextResponse.json({ error: `Error interno: ${msg}` }, { status: 500 });
+    console.error("[/api/comparar] Fallo Crítico:", msg);
+    return NextResponse.json({ error: `Fallo de validación interno: ${msg}` }, { status: 500 });
   }
 }

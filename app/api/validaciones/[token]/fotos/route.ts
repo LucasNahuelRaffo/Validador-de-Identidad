@@ -23,11 +23,13 @@ export async function GET(
     const result = val as { datos_dni: Record<string, string> | null };
     const datos_dni = result.datos_dni;
     const extDni = datos_dni?.ext_dni || "jpg";
+    const extDorso = datos_dni?.ext_dni_dorso || "jpg";
     const extSelfie = datos_dni?.ext_selfie || "jpg";
 
     // 2. Pedir URLs firmadas al Storage (válidas por 600 segundos)
-    const [dniUrlData, selfieUrlData] = await Promise.all([
+    const [dniUrlData, dorsoUrlData, selfieUrlData] = await Promise.all([
       supabase.storage.from("validaciones").createSignedUrl(`${token}/dni.${extDni}`, 600),
+      supabase.storage.from("validaciones").createSignedUrl(`${token}/dorso.${extDorso}`, 600),
       supabase.storage.from("validaciones").createSignedUrl(`${token}/selfie.${extSelfie}`, 600)
     ]);
 
@@ -37,6 +39,7 @@ export async function GET(
 
     return NextResponse.json({
        dniUrl: dniUrlData.data?.signedUrl || null,
+       dorsoUrl: dorsoUrlData.data?.signedUrl || null,
        selfieUrl: selfieUrlData.data?.signedUrl || null,
     });
   } catch (err) {
