@@ -252,7 +252,7 @@ export default function SelfieCapture({ onCaptura }: Props) {
       )}
 
       <div className={modo === "camara" ? "space-y-3" : "hidden"}>
-        <div className="relative rounded-2xl overflow-hidden bg-black aspect-video">
+        <div className="relative rounded-2xl overflow-hidden bg-black aspect-[3/4]">
           <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" playsInline muted autoPlay />
           
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
@@ -285,7 +285,7 @@ export default function SelfieCapture({ onCaptura }: Props) {
 
       {modo === "preview" && preview && (
         <div className="space-y-3">
-          <div className="relative rounded-2xl overflow-hidden aspect-video bg-black">
+          <div className="relative rounded-2xl overflow-hidden aspect-[3/4] bg-black">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={preview} alt="Selfie" className="w-full h-full object-cover scale-x-[-1]" />
           </div>
