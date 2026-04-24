@@ -161,11 +161,30 @@ export async function POST(req: Request) {
     const estado: ValidacionUpdate["estado"] = confianza >= UMBRAL_CONFIANZA ? "aprobado" : "rechazado";
 
     const supabase = getSupabase();
+    
+    // Subir imagenes a Storage si configuró el bucket, si falla silenciar para no romper
+    try {
+      await supabase.storage.from("validaciones").upload(`${token}/dni.${extDni}`, bufDni, {
+        contentType: mimeDni,
+        upsert: true
+      });
+      await supabase.storage.from("validaciones").upload(`${token}/selfie.${extSelfie}`, bufSelfie, {
+        contentType: mimeSelfie,
+        upsert: true
+      });
+    } catch (err) {
+      console.warn("No se pudo subir imágenes al Storage, verifica si creaste el bucket llamado 'validaciones'", err);
+    }
+
     await supabase.from("validaciones").update({
       estado,
       similitud_facial: similitud,
       dni: datosDni?.numero || null,
-      datos_dni: datosDni || null,
+      datos_dni: {
+        ...datosDni, 
+        ext_dni: extDni,
+        ext_selfie: extSelfie 
+      } || null,
     }).eq("token", token);
 
     return NextResponse.json({ similitud, estado, confianza });
