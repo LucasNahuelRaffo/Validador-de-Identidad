@@ -74,28 +74,33 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
       const blob = await res.blob();
       const file = new File([blob], "dni.jpg", { type: "image/jpeg" });
 
-      const compressedFile = await imageCompression(file, {
+      // Para OCR usamos resolución alta (2400px) para que Tesseract lea bien
+      const ocrFile = await imageCompression(file, {
+        maxSizeMB: 2,
+        maxWidthOrHeight: 2400,
+        useWebWorker: true,
+        initialQuality: 0.95
+      });
+      const ocrDataUrl = await imageCompression.getDataUrlFromFile(ocrFile);
+
+      // Para enviar al servidor usamos resolución más baja
+      const sendFile = await imageCompression(file, {
         maxSizeMB: 1,
         maxWidthOrHeight: 1600,
         useWebWorker: true,
         initialQuality: 0.9
       });
-
-      const compressedDataUrl = await imageCompression.getDataUrlFromFile(compressedFile);
+      const sendDataUrl = await imageCompression.getDataUrlFromFile(sendFile);
       
       const datosDni: Record<string, string> = {};
 
       if (tipo === "frente") {
-        const { data } = await Tesseract.recognize(compressedDataUrl, "spa", { logger: () => {} });
+        const { data } = await Tesseract.recognize(ocrDataUrl, "spa", { logger: () => {} });
         const texto = data.text;
-        
         const upperTexto = texto.toUpperCase();
         
-        // Solo bloqueamos si estamos SEGUROS de que es el lado equivocado.
-        // Si el OCR falla por mala cámara o poca luz, dejamos pasar la validación
-        // al servidor (que luego usará IA facial y fallará si no hay rostro humano).
+        // Solo bloqueamos si estamos SEGUROS de que es el lado equivocado
         const isDorsoExplicit = /(IDARG|<<)/.test(upperTexto);
-
         if (isDorsoExplicit) {
           throw new Error("Parece que subiste el dorso. Necesitamos la parte de FRENTE (donde está tu foto).");
         }
@@ -105,16 +110,14 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         if (matchConPuntos) {
           datosDni.numero = matchConPuntos[1].replace(/[.\s]/g, "");
         } else {
-          const allDigitMatches = texto.match(/\d+/g);
+          // Buscamos números de 7-8 dígitos que NO empiecen con 0
+          const allDigitMatches = texto.match(/\b([1-9]\d{6,7})\b/g);
           if (allDigitMatches) {
-            const candidato = allDigitMatches.find(d => d.length >= 7 && d.length <= 8);
-            if (candidato) datosDni.numero = candidato;
+            datosDni.numero = allDigitMatches[0];
           }
         }
         
         // === NOMBRE Y APELLIDO ===
-        // Estrategia: buscar cabeceras "Apellido" y "Nombre", tomar la línea siguiente,
-        // y filtrar cada palabra para quedarnos solo con texto limpio (2+ letras, puras)
         const cleanWord = (w: string) => /^[A-ZÁÉÍÓÚÑ]{2,}$/i.test(w.trim());
         const lines = texto.split("\n").map(l => l.trim()).filter(l => l.length > 0);
         
@@ -124,16 +127,14 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         for (let i = 0; i < lines.length; i++) {
           const upper = lines[i].toUpperCase();
           
-          // Después de "Apellido / Surname" → tomar siguiente línea como apellido
-          if (!apellido && (upper.includes("APELLIDO") || upper.includes("SURNAME"))) {
+          if (!apellido && /(APELLID[O0]|SURNAME)/.test(upper)) {
             if (i + 1 < lines.length) {
               const palabras = lines[i + 1].split(/\s+/).filter(cleanWord);
               if (palabras.length > 0) apellido = palabras.join(" ");
             }
           }
           
-          // Después de "Nombre / Name" → tomar siguiente línea como nombre
-          if (!nombre && (upper.includes("NOMBRE") || upper.includes("NAME")) && !upper.includes("SURNAME")) {
+          if (!nombre && /(NOMBRE|NAME)/.test(upper) && !/(SURNAME)/.test(upper)) {
             if (i + 1 < lines.length) {
               const palabras = lines[i + 1].split(/\s+/).filter(cleanWord);
               if (palabras.length > 0) nombre = palabras.join(" ");
@@ -147,44 +148,38 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
       }
       
       if (tipo === "dorso") {
-        const { data } = await Tesseract.recognize(compressedDataUrl, "eng", { logger: () => {} });
+        const { data } = await Tesseract.recognize(ocrDataUrl, "eng", { logger: () => {} });
         const texto = data.text;
-        
         const upperTexto = texto.toUpperCase();
+        
         const isFrenteExplicit = /(APELLIDO|TRAMITE|EJEMPLAR|SEXO|NACIMIENTO|REPUBLICA|ARGENTINA|NACIONAL|IDENTIDAD)/.test(upperTexto);
         const isDorsoExplicit = /(IDARG|<<)/.test(upperTexto);
 
         if (isFrenteExplicit && !isDorsoExplicit) {
           throw new Error("Parece que subiste el frente. Necesitamos la parte de ATRÁS (código de barras).");
         }
-        
-        // Tesseract confunde < con K o L. Normalizamos K y L aisladas a <
-        // Solo en líneas que parecen MRZ (mayúsculas + muchas K/L seguidas)
+
+        // Tesseract confunde < con K o L. Normalizamos
         const lineas = texto.split("\n");
         for (const linea of lineas) {
-          // Buscamos líneas tipo MRZ: contienen al menos 20 chars y varias K o L seguidas
-          if (linea.length > 20 && /[KL]{3,}/.test(linea)) {
-            // Reemplazar K y L por < cuando están rodeadas de otras K/L o al final
-            const normalizada = linea.replace(/[KL]/g, "<");
-            
-            // Ahora buscar APELLIDO<<NOMBRES (exigir letra después de <<)
-            const match = normalizada.match(/([A-Z]{2,})<<([A-Z][A-Z<]*)/);
-            if (match) {
-              const ap = match[1];
-              const nom = match[2].replace(/<+/g, " ").trim();
-              datosDni.nombre_raw = `${ap} ${nom}`;
+          const normalizada = linea.replace(/[KL]/g, "<");
+          
+          if (normalizada.includes("<<")) {
+            const matchName = normalizada.match(/([A-Z]{2,})<<([A-Z][A-Z<]*)/);
+            if (matchName) {
+              const ap = matchName[1];
+              const nom = matchName[2].replace(/<+/g, " ").trim();
+              if (!datosDni.nombre_raw) datosDni.nombre_raw = `${ap} ${nom}`;
             }
           }
-          
-          // Buscar número en MRZ: IDARG47635708
-          const idMatch = linea.match(/IDARG(\d{7,8})/);
+          const idMatch = normalizada.match(/(?:ARG|<|I0|ID)[A-Z0-9<]*(\d{7,8})/);
           if (idMatch) datosDni.numero_mrz = idMatch[1];
         }
       }
 
       // Siempre pasar datos si hay alguno
       const tieneData = Object.keys(datosDni).length > 0;
-      onCaptura(compressedDataUrl, tieneData ? datosDni : undefined);
+      onCaptura(sendDataUrl, tieneData ? datosDni : undefined);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error procesando la imagen.");
     } finally {
