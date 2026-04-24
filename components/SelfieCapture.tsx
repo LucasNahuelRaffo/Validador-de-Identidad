@@ -98,16 +98,22 @@ export default function SelfieCapture({ onCaptura }: Props) {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
 
-    // 2. Verificación Anti-Fraude OCR (Nueva)
-    // Buscamos palabras típicas de documentos en la foto de perfil para evitar que suban el DNI como selfie
+    // 2. Verificación Anti-Fraude OCR & Proporción (Reforzada)
     setProcesandoOcr(true);
     try {
+      // Regla de Tamaño: Si la cara en la selfie es muy pequeña (como en un carnet), sospechamos de fraude
+      if (distanciaRef.current !== "perfecto") {
+        setError("⚠️ Seguridad: La cara está muy lejos o es muy pequeña. Acercate más para validar tu identidad.");
+        reintentar();
+        return;
+      }
+
       const { data: { text } } = await Tesseract.recognize(dataUrl, "spa+eng");
-      const keywords = ["ARGENTINA", "DOCUMENTO", "NACIONAL", "REPUBLICA", "APELLIDO", "NOMBRE", "N°", "DOCUMENT", "IDENTITY"];
+      const keywords = ["ARGENTINA", "DOCUMENTO", "NACIONAL", "REPUBLICA", "APELLIDO", "NOMBRE", "N°", "DOCUMENT", "IDENTITY", "47.", "20-"];
       const isDoc = keywords.some(k => text.toUpperCase().includes(k));
       
       if (isDoc) {
-        setError("⚠️ Seguridad: Se detectó un documento en lugar de un rostro vivo. Por favor mostrá solo tu cara.");
+        setError("❌ INTENTO DE FRAUDE DETECTADO: Estás mostrando un documento físico. Poné tu CARA frente a la cámara.");
         reintentar();
         return;
       }

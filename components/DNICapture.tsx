@@ -88,10 +88,17 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         const { data } = await Tesseract.recognize(compressedDataUrl, "spa", { logger: () => {} });
         const texto = data.text;
         
-        const matchDni = texto.match(/\b(\d{7,8})\b/);
+        // Normalizamos el texto (quitamos puntos y espacios de números)
+        const textoLimpio = texto.replace(/[.,\s]/g, "");
+        const matchDni = textoLimpio.match(/\b(\d{7,8})\b/);
         if (matchDni) datosDni.numero = matchDni[1];
         
-        const lines = texto.split("\n").map((l) => l.trim()).filter((l) => l.length > 3);
+        // Buscamos el nombre ignorando cabeceras institucionales
+        const cabeceras = ["REPUBLICA", "NACIONAL", "PERSONAS", "MINISTERIO", "INTERIOR", "ARGENTINA", "MERCOSUR"];
+        const lines = texto.split("\n")
+          .map((l) => l.trim())
+          .filter((l) => l.length > 3 && !cabeceras.some(c => l.toUpperCase().includes(c)));
+        
         if (lines[0]) datosDni.nombre_raw = lines[0];
       }
 
