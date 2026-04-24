@@ -180,11 +180,14 @@ export async function POST(req: Request) {
       estado,
       similitud_facial: similitud,
       dni: datosDni?.numero || null,
-      datos_dni: {
+      datos_dni: datosDni ? {
         ...datosDni, 
         ext_dni: extDni,
         ext_selfie: extSelfie 
-      } || null,
+      } : {
+        ext_dni: extDni,
+        ext_selfie: extSelfie
+      },
     }).eq("token", token);
 
     return NextResponse.json({ similitud, estado, confianza });
