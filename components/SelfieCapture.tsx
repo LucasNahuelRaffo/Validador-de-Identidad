@@ -85,7 +85,7 @@ export default function SelfieCapture({ onCaptura }: Props) {
     if (frame1 && frame2) {
       const ctx = canvas.getContext("2d")!;
       const mov = calcularMovimiento(ctx, frame1, frame2);
-      if (mov < 0.015) {
+      if (mov < 0.025) {
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         setModo("idle");
@@ -147,17 +147,22 @@ export default function SelfieCapture({ onCaptura }: Props) {
         let newStatus: Distancia = "buscando";
 
         if (detections.detections.length > 0) {
-          const faces = [...detections.detections].sort((a, b) => b.boundingBox!.width - a.boundingBox!.width);
-          const bestFace = faces[0].boundingBox!;
-          const videoWidth = video.videoWidth || 1;
-          const normalizedWidth = bestFace.width / videoWidth;
-
-          if (normalizedWidth < 0.28) {
-            newStatus = "lejos";
-          } else if (normalizedWidth > 0.65) {
-            newStatus = "cerca";
+          // Si hay más de 1 cara, es sospechoso (usuario + DNI)
+          if (detections.detections.length > 1) {
+            newStatus = "buscando";
+            setError("Se detectaron múltiples caras. Sacá cualquier documento del encuadre.");
           } else {
-            newStatus = "perfecto";
+            const bestFace = detections.detections[0].boundingBox!;
+            const videoWidth = video.videoWidth || 1;
+            const normalizedWidth = bestFace.width / videoWidth;
+
+            if (normalizedWidth < 0.40) {
+              newStatus = "lejos";
+            } else if (normalizedWidth > 0.65) {
+              newStatus = "cerca";
+            } else {
+              newStatus = "perfecto";
+            }
           }
         }
 

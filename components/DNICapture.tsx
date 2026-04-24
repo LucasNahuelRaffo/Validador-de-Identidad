@@ -86,45 +86,80 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
       const datosDni: Record<string, string> = {};
 
       if (tipo === "frente") {
-        // Del frente solo extraemos el número de documento (es grande y claro)
         const { data } = await Tesseract.recognize(compressedDataUrl, "spa", { logger: () => {} });
         const texto = data.text;
         
-        // Buscar número con puntos: "47.635.708"
+        // === NÚMERO DE DOCUMENTO ===
         const matchConPuntos = texto.match(/(\d{1,2}[.\s]\d{3}[.\s]\d{3})/);
         if (matchConPuntos) {
           datosDni.numero = matchConPuntos[1].replace(/[.\s]/g, "");
         } else {
-          // Fallback: secuencia de 7-8 dígitos
           const allDigitMatches = texto.match(/\d+/g);
           if (allDigitMatches) {
             const candidato = allDigitMatches.find(d => d.length >= 7 && d.length <= 8);
             if (candidato) datosDni.numero = candidato;
           }
         }
+        
+        // === NOMBRE Y APELLIDO ===
+        // Estrategia: buscar cabeceras "Apellido" y "Nombre", tomar la línea siguiente,
+        // y filtrar cada palabra para quedarnos solo con texto limpio (3+ letras, puras)
+        const cleanWord = (w: string) => /^[A-ZÁÉÍÓÚÑ]{3,}$/i.test(w.trim());
+        const lines = texto.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+        
+        let apellido = "";
+        let nombre = "";
+        
+        for (let i = 0; i < lines.length; i++) {
+          const upper = lines[i].toUpperCase();
+          
+          // Después de "Apellido / Surname" → tomar siguiente línea como apellido
+          if (!apellido && (upper.includes("APELLIDO") || upper.includes("SURNAME"))) {
+            if (i + 1 < lines.length) {
+              const palabras = lines[i + 1].split(/\s+/).filter(cleanWord);
+              if (palabras.length > 0) apellido = palabras.join(" ");
+            }
+          }
+          
+          // Después de "Nombre / Name" → tomar siguiente línea como nombre
+          if (!nombre && (upper.includes("NOMBRE") || upper.includes("NAME")) && !upper.includes("SURNAME")) {
+            if (i + 1 < lines.length) {
+              const palabras = lines[i + 1].split(/\s+/).filter(cleanWord);
+              if (palabras.length > 0) nombre = palabras.join(" ");
+            }
+          }
+        }
+        
+        if (apellido || nombre) {
+          datosDni.nombre_raw = [apellido, nombre].filter(Boolean).join(" ");
+        }
       }
       
       if (tipo === "dorso") {
-        // Del dorso extraemos el NOMBRE desde la zona MRZ (Machine Readable Zone)
-        // La MRZ del DNI argentino tiene 3 líneas, la última tiene: RAFFO<<LUCAS<NAHUEL<<<<<<
-        // "<<" separa apellido de nombre, "<" separa nombres múltiples
         const { data } = await Tesseract.recognize(compressedDataUrl, "eng", { logger: () => {} });
         const texto = data.text;
         
-        // Buscar línea MRZ con formato APELLIDO<<NOMBRES
-        // Exigimos que después del << haya al menos una letra real (no solo <)
-        // Esto evita matchear "ARG<<<<<" (código de país)
-        const mrzNameMatch = texto.match(/([A-Z]{2,})<<([A-Z][A-Z<]*)/);
-        if (mrzNameMatch) {
-          const apellido = mrzNameMatch[1];
-          const nombres = mrzNameMatch[2].replace(/<+/g, " ").trim();
-          datosDni.nombre_raw = `${apellido} ${nombres}`;
-        }
-        
-        // Buscar número de documento en MRZ: IDARG47635708
-        const mrzIdMatch = texto.match(/IDARG(\d{7,8})/);
-        if (mrzIdMatch) {
-          datosDni.numero_mrz = mrzIdMatch[1];
+        // Tesseract confunde < con K o L. Normalizamos K y L aisladas a <
+        // Solo en líneas que parecen MRZ (mayúsculas + muchas K/L seguidas)
+        const lineas = texto.split("\n");
+        for (const linea of lineas) {
+          // Buscamos líneas tipo MRZ: contienen al menos 20 chars y varias K o L seguidas
+          if (linea.length > 20 && /[KL]{3,}/.test(linea)) {
+            // Reemplazar K y L por < cuando están rodeadas de otras K/L o al final
+            const normalizada = linea.replace(/[KL]/g, "<");
+            
+            // Ahora buscar APELLIDO<<NOMBRES (exigir letra después de <<)
+            const match = normalizada.match(/([A-Z]{2,})<<([A-Z][A-Z<]*)/);
+            if (match) {
+              const ap = match[1];
+              const nom = match[2].replace(/<+/g, " ").trim();
+              datosDni.nombre_raw = `${ap} ${nom}`;
+            }
+          }
+          
+          // Buscar número en MRZ: IDARG47635708
+          const idMatch = linea.match(/IDARG(\d{7,8})/);
+          if (idMatch) datosDni.numero_mrz = idMatch[1];
         }
       }
 
