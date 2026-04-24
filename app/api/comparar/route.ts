@@ -248,26 +248,74 @@ export async function POST(req: Request) {
       console.warn("Pixel comparison skip:", pixelErr);
     }
 
-    // Check 3: Verificar que la cara en la selfie ocupa un porcentaje razonable del frame
-    // En un DNI, la cara ocupa ~15-25% del frame. En una selfie real, ocupa ~40-70%.
+    // Check 3: Proporción de cara con DIMENSIONES REALES de la imagen
+    // Usamos Jimp para obtener el tamaño real de la selfie, no estimaciones
     if (dataCompare.faces2?.length > 0) {
       const selfieBox = dataCompare.faces2[0].face_rectangle;
       if (selfieBox) {
-        // Face++ no da el tamaño total de la imagen directamente,
-        // pero podemos inferir si la cara es proporcionalmente pequeña
-        const faceArea = selfieBox.width * selfieBox.height;
-        const faceTop = selfieBox.top;
-        const faceLeft = selfieBox.left;
-        // Si la cara está muy arriba-izquierda y es pequeña, es sospechoso
-        const estimatedImgWidth = faceLeft + selfieBox.width + faceLeft; // rough estimate
-        const estimatedImgHeight = faceTop + selfieBox.height + faceTop;
-        const estimatedTotalArea = estimatedImgWidth * estimatedImgHeight;
-        const faceRatio = faceArea / Math.max(estimatedTotalArea, 1);
-        
-        if (faceRatio < 0.08) {
-          return NextResponse.json({ 
-            error: "La cara en la selfie es muy pequeña. Acercate más a la cámara." 
-          }, { status: 422 });
+        try {
+          const selfieImg = await Jimp.read(bufSelfie);
+          const imgW = selfieImg.bitmap.width;
+          const imgH = selfieImg.bitmap.height;
+          const faceAreaRatio = (selfieBox.width * selfieBox.height) / (imgW * imgH);
+          
+          console.log(`[Anti-Fraud] Selfie ${imgW}x${imgH}, Face ${selfieBox.width}x${selfieBox.height}, Ratio: ${(faceAreaRatio * 100).toFixed(1)}%`);
+          
+          // En una selfie real a distancia normal, la cara ocupa 10-40% del frame
+          // En un DNI sostenido cerca, la cara del documento ocupa 3-10% del frame
+          if (faceAreaRatio < 0.06) {
+            return NextResponse.json({ 
+              error: "La cara detectada es muy pequeña en relación a la imagen. Sacá una selfie real acercándote." 
+            }, { status: 422 });
+          }
+          
+          // Check 4: Análisis de textura del fondo (detectar bordes de documento)
+          // Un documento tiene MUCHO contraste alrededor de la cara (texto, bordes, escudo)
+          // Una selfie real tiene un fondo relativamente uniforme
+          const checkSize = 100;
+          selfieImg.resize({ w: checkSize, h: checkSize });
+          const pixels = selfieImg.bitmap.data;
+          
+          // Calculamos la varianza de brillo de toda la imagen
+          let sumBrillo = 0;
+          let sumBrillo2 = 0;
+          const totalPx = checkSize * checkSize;
+          for (let i = 0; i < totalPx * 4; i += 4) {
+            const brillo = (pixels[i] + pixels[i+1] + pixels[i+2]) / 3;
+            sumBrillo += brillo;
+            sumBrillo2 += brillo * brillo;
+          }
+          const mediaBrillo = sumBrillo / totalPx;
+          const varianza = (sumBrillo2 / totalPx) - (mediaBrillo * mediaBrillo);
+          
+          // También contamos los bordes (cambios bruscos de color entre pixeles vecinos)
+          let edgeCount = 0;
+          for (let y = 0; y < checkSize - 1; y++) {
+            for (let x = 0; x < checkSize - 1; x++) {
+              const idx = (y * checkSize + x) * 4;
+              const idxR = idx + 4; // pixel derecho
+              const idxD = (y + 1) * checkSize * 4 + x * 4; // pixel abajo
+              
+              const diffH = Math.abs(pixels[idx] - pixels[idxR]) + Math.abs(pixels[idx+1] - pixels[idxR+1]) + Math.abs(pixels[idx+2] - pixels[idxR+2]);
+              const diffV = Math.abs(pixels[idx] - pixels[idxD]) + Math.abs(pixels[idx+1] - pixels[idxD+1]) + Math.abs(pixels[idx+2] - pixels[idxD+2]);
+              
+              if (diffH > 80 || diffV > 80) edgeCount++;
+            }
+          }
+          const edgeRatio = edgeCount / (totalPx);
+          
+          console.log(`[Anti-Fraud] Varianza: ${varianza.toFixed(0)}, Bordes: ${(edgeRatio * 100).toFixed(1)}%`);
+          
+          // Un documento tiene muchísimos bordes (>20%) por el texto impreso
+          // Una selfie real tiene pocos bordes (<15%)
+          if (edgeRatio > 0.22 && faceAreaRatio < 0.15) {
+            return NextResponse.json({ 
+              error: "Se detectó un documento impreso en la imagen. Tomá una selfie real de tu rostro." 
+            }, { status: 422 });
+          }
+          
+        } catch (dimErr) {
+          console.warn("Dimension check skip:", dimErr);
         }
       }
     }

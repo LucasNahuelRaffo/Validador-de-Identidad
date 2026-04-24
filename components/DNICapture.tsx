@@ -112,7 +112,9 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         const texto = data.text;
         
         // Buscar línea MRZ con formato APELLIDO<<NOMBRES
-        const mrzNameMatch = texto.match(/([A-Z]{2,})<<([A-Z<]+)/);
+        // Exigimos que después del << haya al menos una letra real (no solo <)
+        // Esto evita matchear "ARG<<<<<" (código de país)
+        const mrzNameMatch = texto.match(/([A-Z]{2,})<<([A-Z][A-Z<]*)/);
         if (mrzNameMatch) {
           const apellido = mrzNameMatch[1];
           const nombres = mrzNameMatch[2].replace(/<+/g, " ").trim();
