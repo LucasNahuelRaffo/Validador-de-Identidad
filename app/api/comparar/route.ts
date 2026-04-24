@@ -166,19 +166,16 @@ export async function POST(req: Request) {
     try {
       const imgDni = await Jimp.read(bufDni);
       const imgSelfie = await Jimp.read(bufSelfie);
-      // Normalizamos ambas a 200x200 para comparar rápido
       const size = 200;
       imgDni.resize({ w: size, h: size });
       imgSelfie.resize({ w: size, h: size });
       let matchPixels = 0;
       const totalPixels = size * size;
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          const c1 = Jimp.intToRGBA(imgDni.getPixelColor(x, y));
-          const c2 = Jimp.intToRGBA(imgSelfie.getPixelColor(x, y));
-          const diff = Math.abs(c1.r - c2.r) + Math.abs(c1.g - c2.g) + Math.abs(c1.b - c2.b);
-          if (diff < 80) matchPixels++;
-        }
+      const d1 = imgDni.bitmap.data;
+      const d2 = imgSelfie.bitmap.data;
+      for (let i = 0; i < totalPixels * 4; i += 4) {
+        const diff = Math.abs(d1[i] - d2[i]) + Math.abs(d1[i+1] - d2[i+1]) + Math.abs(d1[i+2] - d2[i+2]);
+        if (diff < 80) matchPixels++;
       }
       const similarity = matchPixels / totalPixels;
       if (similarity > 0.60) {
