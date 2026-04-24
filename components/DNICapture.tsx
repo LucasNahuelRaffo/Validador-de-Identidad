@@ -234,30 +234,34 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
   const toggleFlash = async () => {
     if (!streamRef.current) return;
     const track = streamRef.current.getVideoTracks()[0];
+    
     try {
         const nuevoEstado = !flashActivado;
-        const constraints = track.getConstraints();
+        
+        // En iOS/Safari o ciertos Android, applyConstraints puede "matar" el stream si no le gusta el comando.
+        // Intentamos aplicarlo de la forma más limpia posible.
         await track.applyConstraints({
-            ...constraints,
             advanced: [{ torch: nuevoEstado }]
         } as any);
-        setFlashActivado(nuevoEstado);
         
-        // Ciertos dispositivos pausan el stream nativamente al cambiar los constraints de la cámara.
-        // Nos aseguramos de forzar el "play" nuevamente por si el frame se congeló en negro.
-        if (videoRef.current && videoRef.current.paused) {
-            videoRef.current.play().catch(() => {});
-        }
+        setFlashActivado(nuevoEstado);
+
+        // Verificación de integridad: si el video se pausó o se puso negro, intentamos recuperarlo.
+        setTimeout(() => {
+          if (videoRef.current && videoRef.current.readyState < 2) {
+             console.warn("Stream detectado como no-listo tras flash. Reiniciando...");
+             abrirCamara();
+          }
+        }, 500);
+
     } catch (e) {
-        console.warn("Error al intentar cambiar el estado del flash", e);
-        // Fallback: algunos OS requieren la propiedad directamente en el objeto superior
-        try {
-            const nuevoEstado = !flashActivado;
-            await track.applyConstraints({ torch: nuevoEstado } as any);
-            setFlashActivado(nuevoEstado);
-        } catch (e2) {
-             console.error("Fallo crítico del flash", e2);
-        }
+        console.warn("Error crítico al conmutar flash:", e);
+        // Si falló, lo más probable es que el stream siga vivo pero sin flash. 
+        // No cambiamos el estado para que el usuario no vea el botón como "prendido".
+        setFlashActivado(false);
+        
+        // Si la pantalla quedó negra, forzamos reinicio de cámara
+        abrirCamara();
     }
   };
 

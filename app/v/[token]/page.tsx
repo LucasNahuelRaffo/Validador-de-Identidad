@@ -224,7 +224,10 @@ export default function ValidacionPage() {
                 <DNICapture tipo="frente" onCaptura={capturaDniFrente} />
                 <div className="mt-auto pt-4">
                   {imagenDniFrente && (
-                    <button onClick={continuarADorso} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition-colors shadow-sm">
+                    <button 
+                      onClick={continuarADorso} 
+                      className="w-full bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5 text-white font-bold py-4 rounded-xl transition-all shadow-md hover:shadow-lg active:scale-95"
+                    >
                       Continuar →
                     </button>
                   )}
@@ -237,13 +240,16 @@ export default function ValidacionPage() {
                 <DNICapture tipo="dorso" onCaptura={capturaDniDorso} />
                 <div className="mt-auto pt-4 space-y-2">
                   {imagenDniDorso && (
-                    <button onClick={avanzarASelfie} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition-colors shadow-sm">
+                    <button 
+                      onClick={avanzarASelfie} 
+                      className="w-full bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5 text-white font-bold py-4 rounded-xl transition-all shadow-md hover:shadow-lg active:scale-95"
+                    >
                       Continuar a Selfie →
                     </button>
                   )}
                   <button 
                     onClick={() => setPaso("dniFrente")} 
-                    className="w-full text-slate-500 hover:text-slate-700 text-sm font-medium py-2 transition-colors"
+                    className="w-full text-slate-500 hover:text-slate-700 text-sm font-medium py-2 transition-colors active:opacity-60"
                   >
                     ← Volver al Frente
                   </button>
@@ -260,7 +266,10 @@ export default function ValidacionPage() {
                 <SelfieCapture onCaptura={capturaSelfie} />
                 <div className="mt-auto pt-4 space-y-2">
                   {imagenSelfie && (
-                    <button onClick={verificar} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition-colors shadow-sm">
+                    <button 
+                      onClick={verificar} 
+                      className="w-full bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5 text-white font-bold py-4 rounded-xl transition-all shadow-md hover:shadow-lg active:scale-95"
+                    >
                       Verificar Identidad Definitiva →
                     </button>
                   )}
