@@ -41,6 +41,7 @@ export async function GET(
        dniUrl: dniUrlData.data?.signedUrl || null,
        dorsoUrl: dorsoUrlData.data?.signedUrl || null,
        selfieUrl: selfieUrlData.data?.signedUrl || null,
+       datos_dni: val.datos_dni
     });
   } catch (err) {
     console.error("[/api/validaciones/fotos]", err);

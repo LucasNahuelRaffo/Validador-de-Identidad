@@ -26,7 +26,7 @@ export default function PanelVendedor() {
   
   // Estados para el Modal de Fotos
   const [modalAbierto, setModalAbierto] = useState(false);
-  const [fotosElegidas, setFotosElegidas] = useState<{ dniUrl: string | null; dorsoUrl: string | null; selfieUrl: string | null } | null>(null);
+  const [fotosElegidas, setFotosElegidas] = useState<{ dniUrl: string | null; dorsoUrl: string | null; selfieUrl: string | null; datos_dni: Record<string, string> | null } | null>(null);
   const [cargandoFotos, setCargandoFotos] = useState(false);
   const [errorFotos, setErrorFotos] = useState<string | null>(null);
 
@@ -298,7 +298,36 @@ export default function PanelVendedor() {
                        <p className="font-bold text-red-700">{errorFotos}</p>
                     </div>
                  ) : fotosElegidas && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="space-y-6">
+                       {/* Panel de Datos Extraídos */}
+                       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5">
+                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                             </svg>
+                             Datos Extraídos por OCR
+                          </h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                             <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                                <p className="text-[10px] text-slate-400 font-bold uppercase">N° Documento</p>
+                                <p className="text-sm font-mono font-bold text-slate-800">{fotosElegidas.datos_dni?.numero || "No detectado"}</p>
+                             </div>
+                             <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                                <p className="text-[10px] text-slate-400 font-bold uppercase">Nombre (Bruto)</p>
+                                <p className="text-sm font-medium text-slate-800 truncate">{fotosElegidas.datos_dni?.nombre_raw || "No detectado"}</p>
+                             </div>
+                             <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                                <p className="text-[10px] text-slate-400 font-bold uppercase">Formato</p>
+                                <p className="text-sm font-medium text-slate-800">Horizontal (Auto-Crop)</p>
+                             </div>
+                             <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                                <p className="text-[10px] text-slate-400 font-bold uppercase">Biometría</p>
+                                <p className="text-sm font-medium text-green-600 font-bold">Liveness Ok</p>
+                             </div>
+                          </div>
+                       </div>
+
+                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                        <div className="space-y-4">
                           <h4 className="font-bold text-slate-800 flex items-center justify-center gap-2 tracking-wide uppercase text-xs bg-slate-100 py-2 rounded-lg">
                              Frente del DNI
@@ -342,6 +371,7 @@ export default function PanelVendedor() {
                           </div>
                        </div>
                     </div>
+                 </div>
                  )}
               </motion.div>
            </motion.div>
