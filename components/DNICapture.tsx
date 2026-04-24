@@ -228,6 +228,14 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
             if (idMatch2) datosDni.numero_mrz = idMatch2[1];
           }
         }
+
+        // Post-proceso: quitar K/L espuria al inicio de cada palabra
+        // (Tesseract lee < como K, dejando "KLUCAS" en vez de "LUCAS")
+        if (datosDni.nombre_mrz) {
+          datosDni.nombre_mrz = datosDni.nombre_mrz.split(" ").map(w =>
+            w.replace(/^[KL](?=[A-Z]{2,})/, "")
+          ).filter(w => w.length >= 2).join(" ");
+        }
       }
 
       // Siempre pasar datos si hay alguno
