@@ -167,9 +167,13 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
 
         // Extraer datos de la MRZ del dorso
         const lineas = texto.split("\n");
-        for (const linea of lineas) {
-          // Intento 1: probar la línea cruda (Tesseract a veces lee << correctamente)
-          if (linea.includes("<<")) {
+        for (const rawLinea of lineas) {
+          // Tesseract lee < como <K o <L consistentemente.
+          // Limpiamos el patrón <K y <L → < antes de extraer.
+          const linea = rawLinea.replace(/<[KL](?=[A-Z])/g, "<");
+          
+          // Estrategia 1: la línea tiene << reales
+          if (linea.includes("<<") && !datosDni.nombre_mrz) {
             const matchName = linea.match(/([A-Z]{2,})<<([A-Z][A-Z< ]*)/);
             if (matchName) {
               const ap = matchName[1];
