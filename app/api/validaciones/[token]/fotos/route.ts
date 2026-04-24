@@ -1,12 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 
 export async function GET(
-  req: Request,
-  { params }: { params: { token: string } }
+  req: NextRequest,
+  { params }: { params: Promise<{ token: string }> }
 ) {
   try {
-    const { token } = params;
+    const { token } = await params;
     const supabase = getSupabase();
 
     // 1. Obtener los metadatos de esa validación (para saber las extensiones si las hay)
