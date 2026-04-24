@@ -10,7 +10,7 @@ export const maxDuration = 45;
 const FACEPP_COMPARE  = "https://api-us.faceplusplus.com/facepp/v3/compare";
 const FACEPP_LIVENESS = "https://api-us.faceplusplus.com/facepp/v1/faceliveness";
 
-const UMBRAL_CONFIANZA = 70;
+const UMBRAL_CONFIANZA = 80;
 const UMBRAL_LIVENESS = 80;
 
 function parseDataUrl(dataUrl: string): { mime: string; b64: string } {
@@ -200,10 +200,11 @@ export async function POST(req: Request) {
       }
     }
     
-    // Si no pudimos parsear NADA, logueamos pero dejamos pasar (para no bloquear usuarios legítimos)
-    // El pixel comparison y face proportion check del servidor actuarán como backup
+    // FAIL-CLOSED: Si no pudimos confirmar el Liveness (por error de API o score desconocido), RECHAZAMOS.
+    // Nunca dejamos pasar una validación sin prueba de vida verificada.
     if (!livenessOk) {
-      console.warn("[Liveness] No se encontró score conocido. Continuando con otros checks. Response:", JSON.stringify(dataLiveness).substring(0, 300));
+      console.warn("[Liveness] Bloqueando por falta de prueba de vida confirmada. Response:", JSON.stringify(dataLiveness).substring(0, 300));
+      return NextResponse.json({ error: "No se pudo verificar la prueba de vida. Por favor, asegúrate de estar en un lugar con buena iluminación y sin tapar tu rostro." }, { status: 422 });
     }
 
     if (!resCompare.ok || dataCompare.error_message) {
@@ -222,31 +223,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Subiste el mismo archivo en dos pasos distintos." }, { status: 422 });
     }
 
-    // Check 2: Similitud pixel-a-pixel entre DNI y Selfie
-    // Si alguien saca foto del DNI para usarla como selfie, las imágenes serán muy parecidas
-    try {
-      const imgDni = await Jimp.read(bufDni);
-      const imgSelfie = await Jimp.read(bufSelfie);
-      const size = 200;
-      imgDni.resize({ w: size, h: size });
-      imgSelfie.resize({ w: size, h: size });
-      let matchPixels = 0;
-      const totalPixels = size * size;
-      const d1 = imgDni.bitmap.data;
-      const d2 = imgSelfie.bitmap.data;
-      for (let i = 0; i < totalPixels * 4; i += 4) {
-        const diff = Math.abs(d1[i] - d2[i]) + Math.abs(d1[i+1] - d2[i+1]) + Math.abs(d1[i+2] - d2[i+2]);
-        if (diff < 80) matchPixels++;
-      }
-      const similarity = matchPixels / totalPixels;
-      if (similarity > 0.60) {
-        return NextResponse.json({ 
-          error: "⚠️ Fraude detectado: La selfie es demasiado similar al documento. Tomá una foto real de tu rostro." 
-        }, { status: 422 });
-      }
-    } catch (pixelErr) {
-      console.warn("Pixel comparison skip:", pixelErr);
-    }
+    // Check 2 fue removido porque generaba falsos rechazos y el pixel comparison directo fallaba con recortes/rotaciones.
 
     // Check 3: Proporción de cara con DIMENSIONES REALES de la imagen
     // Usamos Jimp para obtener el tamaño real de la selfie, no estimaciones

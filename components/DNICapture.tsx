@@ -103,8 +103,8 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         
         // === NOMBRE Y APELLIDO ===
         // Estrategia: buscar cabeceras "Apellido" y "Nombre", tomar la línea siguiente,
-        // y filtrar cada palabra para quedarnos solo con texto limpio (3+ letras, puras)
-        const cleanWord = (w: string) => /^[A-ZÁÉÍÓÚÑ]{3,}$/i.test(w.trim());
+        // y filtrar cada palabra para quedarnos solo con texto limpio (2+ letras, puras)
+        const cleanWord = (w: string) => /^[A-ZÁÉÍÓÚÑ]{2,}$/i.test(w.trim());
         const lines = texto.split("\n").map(l => l.trim()).filter(l => l.length > 0);
         
         let apellido = "";

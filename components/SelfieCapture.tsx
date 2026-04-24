@@ -147,22 +147,17 @@ export default function SelfieCapture({ onCaptura }: Props) {
         let newStatus: Distancia = "buscando";
 
         if (detections.detections.length > 0) {
-          // Si hay más de 1 cara, es sospechoso (usuario + DNI)
-          if (detections.detections.length > 1) {
-            newStatus = "buscando";
-            setError("Se detectaron múltiples caras. Sacá cualquier documento del encuadre.");
-          } else {
-            const bestFace = detections.detections[0].boundingBox!;
-            const videoWidth = video.videoWidth || 1;
-            const normalizedWidth = bestFace.width / videoWidth;
+          const faces = [...detections.detections].sort((a, b) => b.boundingBox!.width - a.boundingBox!.width);
+          const bestFace = faces[0].boundingBox!;
+          const videoWidth = video.videoWidth || 1;
+          const normalizedWidth = bestFace.width / videoWidth;
 
-            if (normalizedWidth < 0.40) {
-              newStatus = "lejos";
-            } else if (normalizedWidth > 0.65) {
-              newStatus = "cerca";
-            } else {
-              newStatus = "perfecto";
-            }
+          if (normalizedWidth < 0.40) {
+            newStatus = "lejos";
+          } else if (normalizedWidth > 0.65) {
+            newStatus = "cerca";
+          } else {
+            newStatus = "perfecto";
           }
         }
 
