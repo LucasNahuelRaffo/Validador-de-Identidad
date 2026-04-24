@@ -283,7 +283,7 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
     setError(null);
     setProcesando(false);
     setModo("idle");
-    setTimeout(abrirCamara, 100);
+    setTimeout(() => abrirCamara(), 100);
   };
 
   return (
@@ -309,7 +309,7 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
       {modo === "idle" && (
         <button
           type="button"
-          onClick={abrirCamara}
+          onClick={() => abrirCamara()}
           className="w-full border-2 border-dashed border-slate-300 hover:border-blue-400 rounded-2xl p-10 flex flex-col items-center gap-3 transition-colors"
         >
           <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
