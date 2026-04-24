@@ -90,13 +90,13 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         const texto = data.text;
         
         const upperTexto = texto.toUpperCase();
-        const isFrente = /(APELLIDO|NOMBRE|TRAMITE|EJEMPLAR|SEXO|NACIMIENTO|REPUBLICA|ARGENTINA|NACIONAL|IDENTIDAD)/.test(upperTexto);
-        const isDorso = /(IDARG|<<)/.test(upperTexto);
+        
+        // Solo bloqueamos si estamos SEGUROS de que es el lado equivocado.
+        // Si el OCR falla por mala cámara o poca luz, dejamos pasar la validación
+        // al servidor (que luego usará IA facial y fallará si no hay rostro humano).
+        const isDorsoExplicit = /(IDARG|<<)/.test(upperTexto);
 
-        if (!isFrente && !isDorso) {
-          throw new Error("No pudimos reconocer el DNI. Asegurate de que sea un DNI Argentino y esté bien enfocado.");
-        }
-        if (isDorso) {
+        if (isDorsoExplicit) {
           throw new Error("Parece que subiste el dorso. Necesitamos la parte de FRENTE (donde está tu foto).");
         }
         
@@ -151,13 +151,10 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         const texto = data.text;
         
         const upperTexto = texto.toUpperCase();
-        const isFrente = /(APELLIDO|TRAMITE|EJEMPLAR|SEXO|NACIMIENTO|REPUBLICA|ARGENTINA|NACIONAL|IDENTIDAD)/.test(upperTexto);
-        const isDorso = /(IDARG|<<)/.test(upperTexto);
+        const isFrenteExplicit = /(APELLIDO|TRAMITE|EJEMPLAR|SEXO|NACIMIENTO|REPUBLICA|ARGENTINA|NACIONAL|IDENTIDAD)/.test(upperTexto);
+        const isDorsoExplicit = /(IDARG|<<)/.test(upperTexto);
 
-        if (!isFrente && !isDorso) {
-          throw new Error("No pudimos reconocer el dorso del DNI. Asegurate de que sea un DNI Argentino y haya buena luz.");
-        }
-        if (isFrente && !isDorso) {
+        if (isFrenteExplicit && !isDorsoExplicit) {
           throw new Error("Parece que subiste el frente. Necesitamos la parte de ATRÁS (código de barras).");
         }
         
