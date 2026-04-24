@@ -84,53 +84,51 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
       const compressedDataUrl = await imageCompression.getDataUrlFromFile(compressedFile);
       
       const datosDni: Record<string, string> = {};
+
       if (tipo === "frente") {
+        // Del frente solo extraemos el número de documento (es grande y claro)
         const { data } = await Tesseract.recognize(compressedDataUrl, "spa", { logger: () => {} });
         const texto = data.text;
-        const lines = texto.split("\n").map((l) => l.trim()).filter((l) => l.length > 1);
         
-        // 1. Buscar número de documento: buscar patrones como "47.635.708" o "47635708"
-        // Primero buscamos el formato con puntos (más confiable)
+        // Buscar número con puntos: "47.635.708"
         const matchConPuntos = texto.match(/(\d{1,2}[.\s]\d{3}[.\s]\d{3})/);
         if (matchConPuntos) {
           datosDni.numero = matchConPuntos[1].replace(/[.\s]/g, "");
         } else {
-          // Fallback: buscar secuencia de 7-8 dígitos en cualquier parte
+          // Fallback: secuencia de 7-8 dígitos
           const allDigitMatches = texto.match(/\d+/g);
           if (allDigitMatches) {
             const candidato = allDigitMatches.find(d => d.length >= 7 && d.length <= 8);
             if (candidato) datosDni.numero = candidato;
           }
         }
+      }
+      
+      if (tipo === "dorso") {
+        // Del dorso extraemos el NOMBRE desde la zona MRZ (Machine Readable Zone)
+        // La MRZ del DNI argentino tiene 3 líneas, la última tiene: RAFFO<<LUCAS<NAHUEL<<<<<<
+        // "<<" separa apellido de nombre, "<" separa nombres múltiples
+        const { data } = await Tesseract.recognize(compressedDataUrl, "eng", { logger: () => {} });
+        const texto = data.text;
         
-        // 2. Buscar nombre y apellido por contexto de las cabeceras del DNI
-        let apellido = "";
-        let nombre = "";
-        for (let i = 0; i < lines.length; i++) {
-          const upper = lines[i].toUpperCase();
-          // Si la línea es la cabecera "Apellido / Surname", el valor está en la siguiente línea
-          if ((upper.includes("APELLIDO") || upper.includes("SURNAME")) && i + 1 < lines.length) {
-            const nextLine = lines[i + 1].trim();
-            // Verificar que no es otra cabecera
-            if (nextLine.length > 1 && !nextLine.toUpperCase().includes("NOMBRE") && !nextLine.toUpperCase().includes("NAME")) {
-              apellido = nextLine;
-            }
-          }
-          // Si la línea es la cabecera "Nombre / Name", el valor está en la siguiente línea
-          if ((upper.includes("NOMBRE") || upper.includes("NAME")) && !upper.includes("SURNAME") && i + 1 < lines.length) {
-            const nextLine = lines[i + 1].trim();
-            if (nextLine.length > 1 && !nextLine.toUpperCase().includes("SEXO") && !nextLine.toUpperCase().includes("SEX")) {
-              nombre = nextLine;
-            }
-          }
+        // Buscar línea MRZ con formato APELLIDO<<NOMBRES
+        const mrzNameMatch = texto.match(/([A-Z]{2,})<<([A-Z<]+)/);
+        if (mrzNameMatch) {
+          const apellido = mrzNameMatch[1];
+          const nombres = mrzNameMatch[2].replace(/<+/g, " ").trim();
+          datosDni.nombre_raw = `${apellido} ${nombres}`;
         }
         
-        if (apellido || nombre) {
-          datosDni.nombre_raw = [apellido, nombre].filter(Boolean).join(" ");
+        // Buscar número de documento en MRZ: IDARG47635708
+        const mrzIdMatch = texto.match(/IDARG(\d{7,8})/);
+        if (mrzIdMatch) {
+          datosDni.numero_mrz = mrzIdMatch[1];
         }
       }
 
-      onCaptura(compressedDataUrl, tipo === "frente" ? datosDni : undefined);
+      // Siempre pasar datos si hay alguno
+      const tieneData = Object.keys(datosDni).length > 0;
+      onCaptura(compressedDataUrl, tieneData ? datosDni : undefined);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error procesando la imagen.");
     } finally {

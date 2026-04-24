@@ -79,8 +79,9 @@ export default function ValidacionPage() {
     if (datos) setDatosDni(d => ({ ...d, ...datos }));
   }, []);
 
-  const capturaDniDorso = useCallback((imagen: string) => {
+  const capturaDniDorso = useCallback((imagen: string, datos?: Record<string, string>) => {
     setImagenDniDorso(imagen);
+    if (datos) setDatosDni(d => ({ ...d, ...datos }));
   }, []);
 
   const capturaSelfie = useCallback((imagen: string) => {
