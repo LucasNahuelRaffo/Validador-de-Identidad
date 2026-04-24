@@ -43,21 +43,30 @@ export default function SelfieCapture({ onCaptura }: Props) {
   const tiempoPerfectoRef = useRef<number>(0);
   const primerFrameCapturaRef = useRef<ImageData | null>(null);
   const [cargandoModelo, setCargandoModelo] = useState(false);
+  const [mostrarManual, setMostrarManual] = useState(false);
+  const manualTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const initDetector = async () => {
-    try {
-      const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
-      const detector = await FaceDetector.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
-          delegate: "GPU",
-        },
-        runningMode: "VIDEO",
-      });
-      detectorRef.current = detector;
-    } catch (err) {
-      console.error("Error al cargar FaceDetector:", err);
+    const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
+    
+    // Intentar GPU primero, luego CPU como fallback (Samsung falla con GPU)
+    for (const delegate of ["GPU", "CPU"] as const) {
+      try {
+        const detector = await FaceDetector.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+            delegate,
+          },
+          runningMode: "VIDEO",
+        });
+        detectorRef.current = detector;
+        console.log(`[FaceDetector] Usando delegate: ${delegate}`);
+        return;
+      } catch (err) {
+        console.warn(`[FaceDetector] ${delegate} falló, probando siguiente...`, err);
+      }
     }
+    console.error("[FaceDetector] No se pudo iniciar ni con GPU ni CPU");
   };
 
   const capturarFrameData = useCallback((): ImageData | null => {
@@ -237,6 +246,17 @@ export default function SelfieCapture({ onCaptura }: Props) {
       distanciaRef.current = "buscando";
       tiempoPerfectoRef.current = 0;
       setCountdown(null);
+      setMostrarManual(false);
+      
+      // Mostrar botón manual después de 5 segundos como fallback
+      if (manualTimerRef.current) clearTimeout(manualTimerRef.current);
+      manualTimerRef.current = setTimeout(() => {
+        setMostrarManual(true);
+        // Si después de 5s no detectó nada, forzar estado perfecto
+        // para que la captura manual no sea rechazada
+        distanciaRef.current = "perfecto";
+        primerFrameCapturaRef.current = capturarFrameData();
+      }, 5000);
     } catch {
       setError("No se pudo acceder a la cámara. Verificá los permisos del navegador.");
     } finally {
@@ -249,6 +269,7 @@ export default function SelfieCapture({ onCaptura }: Props) {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
+      if (manualTimerRef.current) clearTimeout(manualTimerRef.current);
     };
   }, []);
 
@@ -257,8 +278,10 @@ export default function SelfieCapture({ onCaptura }: Props) {
     setError(null);
     setModo("idle");
     setCountdown(null);
+    setMostrarManual(false);
     distanciaRef.current = "buscando";
     setDistancia("buscando");
+    if (manualTimerRef.current) clearTimeout(manualTimerRef.current);
   };
 
   const getBorderColor = () => {
@@ -306,7 +329,6 @@ export default function SelfieCapture({ onCaptura }: Props) {
           <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" playsInline muted autoPlay />
           
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
-             {/* Este div crea el "agujero" transparente rodeado de negro */}
              <motion.div 
                 animate={{ scale: [0.98, 1, 0.98] }}
                 transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
@@ -331,6 +353,19 @@ export default function SelfieCapture({ onCaptura }: Props) {
              </AnimatePresence>
           </div>
         </div>
+
+        {mostrarManual && (
+          <button
+            onClick={() => capturarYFinalizar()}
+            className="w-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Capturar selfie
+          </button>
+        )}
       </div>
 
       {modo === "preview" && preview && (
