@@ -8,10 +8,8 @@ type ValidacionUpdate = Database["public"]["Tables"]["validaciones"]["Update"];
 export const maxDuration = 45;
 
 const FACEPP_COMPARE  = "https://api-us.faceplusplus.com/facepp/v3/compare";
-const FACEPP_LIVENESS = "https://api-us.faceplusplus.com/facepp/v1/faceliveness";
 
 const UMBRAL_CONFIANZA = 80;
-const UMBRAL_LIVENESS = 80;
 
 function parseDataUrl(dataUrl: string): { mime: string; b64: string } {
   const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
@@ -105,23 +103,14 @@ export async function POST(req: Request) {
     const extDorso  = mimeDorso === "image/png" ? "png" : "jpg";
     const extSelfie = mimeSelfie === "image/png" ? "png" : "jpg";
 
-    // ── 1. Liveness detection en la selfie ──
-    const formLiveness = new FormData();
-    formLiveness.append("api_key", apiKey);
-    formLiveness.append("api_secret", apiSecret);
-    formLiveness.append("image_file", makeBlob(bufSelfie, mimeSelfie), `selfie.${extSelfie}`);
-
-    // ── 2. Comparación facial (Solo frente del DNI y Selfie) ──
+    // ── Comparación facial (Solo frente del DNI y Selfie) ──
     const formCompare = new FormData();
     formCompare.append("api_key", apiKey);
     formCompare.append("api_secret", apiSecret);
     formCompare.append("image_file1", makeBlob(bufDni, mimeDni), `dni.${extDni}`);
     formCompare.append("image_file2", makeBlob(bufSelfie, mimeSelfie), `selfie.${extSelfie}`);
 
-    // Ejecutamos las llamadas de forma SECUENCIAL (evitar límite de concurrencia de APIs gratuitas)
-    const resLiveness = await fetch(FACEPP_LIVENESS, { method: "POST", body: formLiveness });
-    const dataLiveness = await resLiveness.json();
-
+    // Ejecutamos la comparacion facial
     const resCompare = await fetch(FACEPP_COMPARE,  { method: "POST", body: formCompare });
     const dataCompare = await resCompare.json();
 
@@ -132,75 +121,7 @@ export async function POST(req: Request) {
       drawWatermark(bufSelfie, mimeSelfie)
     ]);
 
-    // ── Manejo de Liveness Face++ ──
-    console.log("[Liveness Response]:", JSON.stringify(dataLiveness).substring(0, 800));
-    
-    let livenessOk = false;
-    let livenessError = false;
-    
-    if (dataLiveness.error_message) {
-      // Face++ devolvió error — logueamos pero NO bloqueamos al usuario.
-      // Los otros checks del servidor (pixel comparison, face proportion) protegen contra fraude.
-      console.warn("[Liveness API Error]:", dataLiveness.error_message);
-      livenessError = true;
-    }
-    
-    // Campo directo: { confidence: N }  
-    if (!livenessError && typeof dataLiveness.confidence === "number") {
-      livenessOk = dataLiveness.confidence >= UMBRAL_LIVENESS;
-      if (!livenessOk) {
-        return NextResponse.json({ error: "La prueba de vida no superó el umbral. Tomá una selfie real mirando a la cámara." }, { status: 422 });
-      }
-    }
-    
-    // Face++ faceliveness v1 top-level: { face_genuineness: { screen_replay_confidence, ... } }
-    const genuineness = !livenessError ? (dataLiveness.face_genuineness || dataLiveness.result?.face_genuineness) : null;
-    if (!livenessOk && genuineness) {
-      // screen_replay detecta fotos/impresiones/pantallas
-      if (typeof genuineness.screen_replay_confidence === "number" && typeof genuineness.screen_replay_threshold === "number") {
-        if (genuineness.screen_replay_confidence > genuineness.screen_replay_threshold) {
-          return NextResponse.json({ error: "Se detectó una imagen impresa o pantalla. Tomá una selfie real en vivo." }, { status: 422 });
-        }
-      }
-      // synthetic_face detecta deepfakes
-      if (typeof genuineness.synthetic_face_confidence === "number" && typeof genuineness.synthetic_face_threshold === "number") {
-        if (genuineness.synthetic_face_confidence > genuineness.synthetic_face_threshold) {
-          return NextResponse.json({ error: "Se detectó una imagen sintética. Tomá una selfie real." }, { status: 422 });
-        }
-      }
-      // mask detecta máscaras faciales
-      if (typeof genuineness.mask_confidence === "number" && typeof genuineness.mask_threshold === "number") {
-        if (genuineness.mask_confidence > genuineness.mask_threshold) {
-          return NextResponse.json({ error: "Se detectó una máscara o cobertura facial. Mostrá tu rostro real." }, { status: 422 });
-        }
-      }
-      // face_replaced detecta caras pegadas/reemplazadas
-      if (typeof genuineness.face_replaced === "number" && typeof genuineness.face_replaced_threshold === "number") {
-        if (genuineness.face_replaced > genuineness.face_replaced_threshold) {
-          return NextResponse.json({ error: "Se detectó una cara superpuesta. Tomá una selfie real." }, { status: 422 });
-        }
-      }
-      // Si llegó acá, pasó todos los checks → liveness OK
-      livenessOk = true;
-    }
-    
-    // Campo en faces[]: { faces: [{ liveness: { value: N } }] }
-    if (!livenessOk && !livenessError && dataLiveness.faces?.[0]?.liveness) {
-      const lv = dataLiveness.faces[0].liveness.value ?? dataLiveness.faces[0].liveness.confidence;
-      if (typeof lv === "number") {
-        livenessOk = lv >= UMBRAL_LIVENESS;
-        if (!livenessOk) {
-          return NextResponse.json({ error: "La prueba de vida no superó el umbral. Tomá una selfie real." }, { status: 422 });
-        }
-      }
-    }
-    
-    // FAIL-CLOSED: Si no pudimos confirmar el Liveness (por error de API o score desconocido), RECHAZAMOS.
-    // Nunca dejamos pasar una validación sin prueba de vida verificada.
-    if (!livenessOk) {
-      console.warn("[Liveness] Bloqueando por falta de prueba de vida confirmada. Response:", JSON.stringify(dataLiveness).substring(0, 300));
-      return NextResponse.json({ error: "No se pudo verificar la prueba de vida. Por favor, asegúrate de estar en un lugar con buena iluminación y sin tapar tu rostro." }, { status: 422 });
-    }
+
 
     if (!resCompare.ok || dataCompare.error_message) {
       const msg = dataCompare.error_message || `HTTP ${resCompare.status}`;
