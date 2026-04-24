@@ -89,6 +89,17 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         const { data } = await Tesseract.recognize(compressedDataUrl, "spa", { logger: () => {} });
         const texto = data.text;
         
+        const upperTexto = texto.toUpperCase();
+        const isFrente = /(APELLIDO|NOMBRE|TRAMITE|EJEMPLAR|SEXO|NACIMIENTO|REPUBLICA|ARGENTINA|NACIONAL|IDENTIDAD)/.test(upperTexto);
+        const isDorso = /(MINISTERIO|INTERIOR|IDARG|<<)/.test(upperTexto) || /[KL]{2,}/.test(upperTexto);
+
+        if (!isFrente && !isDorso) {
+          throw new Error("No pudimos reconocer el DNI. Asegurate de que sea un DNI Argentino y esté bien enfocado.");
+        }
+        if (isDorso && !/(APELLIDO|NOMBRE|TRAMITE|SEXO|NACIMIENTO)/.test(upperTexto)) {
+          throw new Error("Parece que subiste el dorso. Necesitamos la parte de FRENTE (donde está tu foto).");
+        }
+        
         // === NÚMERO DE DOCUMENTO ===
         const matchConPuntos = texto.match(/(\d{1,2}[.\s]\d{3}[.\s]\d{3})/);
         if (matchConPuntos) {
@@ -138,6 +149,17 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
       if (tipo === "dorso") {
         const { data } = await Tesseract.recognize(compressedDataUrl, "eng", { logger: () => {} });
         const texto = data.text;
+        
+        const upperTexto = texto.toUpperCase();
+        const isFrente = /(APELLIDO|TRAMITE|EJEMPLAR|SEXO|NACIMIENTO|REPUBLICA|ARGENTINA|NACIONAL|IDENTIDAD)/.test(upperTexto);
+        const isDorso = /(MINISTERIO|INTERIOR|IDARG|<<)/.test(upperTexto) || /[KL]{2,}/.test(upperTexto);
+
+        if (!isFrente && !isDorso) {
+          throw new Error("No pudimos reconocer el dorso del DNI. Asegurate de que sea un DNI Argentino y haya buena luz.");
+        }
+        if (isFrente && !/(IDARG|<<)/.test(upperTexto) && !/[KL]{2,}/.test(upperTexto)) {
+          throw new Error("Parece que subiste el frente. Necesitamos la parte de ATRÁS (código de barras).");
+        }
         
         // Tesseract confunde < con K o L. Normalizamos K y L aisladas a <
         // Solo en líneas que parecen MRZ (mayúsculas + muchas K/L seguidas)
