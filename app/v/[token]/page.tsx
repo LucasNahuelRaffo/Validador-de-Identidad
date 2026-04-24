@@ -213,7 +213,7 @@ export default function ValidacionPage() {
           </div>
         )}
 
-        {paso !== "qr_desktop" && (
+        {paso !== "qr_desktop" && paso !== "expirado" && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex-1 flex flex-col">
             
             {paso === "verificando" && (
