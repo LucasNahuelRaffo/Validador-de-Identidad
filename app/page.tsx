@@ -134,7 +134,7 @@ export default function PanelVendedor() {
             <button
               type="submit"
               disabled={cargando}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-all shadow-md active:scale-95 disabled:opacity-60 disabled:active:scale-100"
+              className="bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5 hover:shadow-lg text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-all shadow-md active:scale-95 disabled:pointer-events-none disabled:opacity-60 disabled:active:scale-100"
             >
               {cargando ? "Generando..." : "Generar link seguro"}
             </button>
@@ -173,7 +173,7 @@ export default function PanelVendedor() {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
             <h2 className="text-base font-semibold text-slate-900">Validaciones recientes</h2>
-            <button onClick={cargarValidaciones} className="text-xs text-blue-600 hover:text-blue-700 font-medium bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+            <button onClick={cargarValidaciones} className="text-xs text-blue-700 hover:text-blue-800 font-medium bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 transition-all shadow-sm hover:shadow active:scale-95">
               Actualizar Registro
             </button>
           </div>
