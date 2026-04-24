@@ -118,7 +118,13 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         }
         
         // === NOMBRE Y APELLIDO ===
-        const cleanWord = (w: string) => /^[A-ZÁÉÍÓÚÑ]{2,}$/i.test(w.trim());
+        // cleanWord: acepta palabras de 2+ letras, rechaza las que sean >50% K/L (basura MRZ)
+        const cleanWord = (w: string) => {
+          const t = w.trim();
+          if (!/^[A-ZÁÉÍÓÚÑ]{2,}$/i.test(t)) return false;
+          const klCount = (t.match(/[KL]/gi) || []).length;
+          return klCount / t.length < 0.5;
+        };
         const lines = texto.split("\n").map(l => l.trim()).filter(l => l.length > 0);
         
         let apellido = "";
@@ -182,6 +188,24 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
                 const ap = matchName[1];
                 const nom = matchName[2].replace(/<+/g, " ").trim();
                 datosDni.nombre_mrz = `${ap} ${nom}`;
+              }
+            }
+          }
+          
+          // Estrategia 3 (nuclear): extraer todas las palabras reales de la línea
+          // y filtrar las que sean basura (puro K/L). Funciona cuando Tesseract
+          // mezcla < reales con K/L de forma imprevisible.
+          if (!datosDni.nombre_mrz && (linea.includes("<") || /[KL]{3,}/.test(linea))) {
+            const allWords = linea.match(/[A-Z]{2,}/g);
+            if (allWords && allWords.length >= 2) {
+              const nameWords = allWords.filter(w => {
+                const klCount = (w.match(/[KL]/g) || []).length;
+                const isGarbage = klCount / w.length > 0.5;
+                const isMrzPrefix = /^(IDARG|ARG|ARGA|ID)$/i.test(w);
+                return !isGarbage && !isMrzPrefix;
+              });
+              if (nameWords.length >= 2) {
+                datosDni.nombre_mrz = nameWords.join(" ");
               }
             }
           }
