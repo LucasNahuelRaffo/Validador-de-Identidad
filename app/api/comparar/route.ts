@@ -9,7 +9,7 @@ export const maxDuration = 45;
 
 const FACEPP_COMPARE  = "https://api-us.faceplusplus.com/facepp/v3/compare";
 
-const UMBRAL_CONFIANZA = 75;
+const UMBRAL_CONFIANZA = 80;
 
 function parseDataUrl(dataUrl: string): { mime: string; b64: string } {
   const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);

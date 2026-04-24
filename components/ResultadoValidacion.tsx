@@ -95,7 +95,7 @@ export default function ResultadoValidacion({ estado, similitud, onReintentar }:
             {(similitud * 100).toFixed(1)}%
           </motion.span>
         </div>
-        <p className="text-xs text-slate-400">Umbral mínimo: 75%</p>
+        <p className="text-xs text-slate-400">Umbral mínimo: 80%</p>
       </motion.div>
 
       {aprobado && (
