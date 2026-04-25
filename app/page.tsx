@@ -317,9 +317,15 @@ export default function PanelVendedor() {
                                 <p className="text-sm font-medium text-slate-800 truncate">{(() => {
                                   const mrz = fotosElegidas.datos_dni?.nombre_mrz || "";
                                   const raw = fotosElegidas.datos_dni?.nombre_raw || "";
-                                  // Elegir el nombre más largo y limpio entre MRZ y frente
-                                  if (mrz && raw) return mrz.length >= raw.length ? mrz : raw;
-                                  return mrz || raw || "No detectado";
+                                  if (!mrz && !raw) return "No detectado";
+                                  if (!mrz) return raw;
+                                  if (!raw) return mrz;
+                                  // Preferir el que tenga menos palabras (menos basura),
+                                  // a igualdad de palabras preferir el más largo (más completo)
+                                  const mrzWords = mrz.split(" ").length;
+                                  const rawWords = raw.split(" ").length;
+                                  if (mrzWords !== rawWords) return mrzWords < rawWords ? mrz : raw;
+                                  return mrz.length >= raw.length ? mrz : raw;
                                 })()}</p>
                              </div>
                              <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">

@@ -118,10 +118,13 @@ export default function DNICapture({ tipo, onCaptura }: Props) {
         }
         
         // === NOMBRE Y APELLIDO ===
-        // cleanWord: acepta palabras de 2+ letras, rechaza las que sean >50% K/L (basura MRZ)
+        // Blacklist de fragmentos comunes del DNI que Tesseract confunde con nombres
+        const dniJunk = new Set(["NAS","NAC","SEX","FEC","DOC","DEL","THE","AND","POR","SUR","REP","EJE","DATE","ARG","DNI","DM","MF","OCT","JUL","ENE","FEB","MAR","ABR","MAY","JUN","AGO","SEP","NOV","DIC"]);
         const cleanWord = (w: string) => {
-          const t = w.trim();
-          if (!/^[A-ZÁÉÍÓÚÑ]{2,}$/i.test(t)) return false;
+          const t = w.trim().toUpperCase();
+          if (t.length < 3) return false;
+          if (!/^[A-ZÁÉÍÓÚÑ]+$/i.test(t)) return false;
+          if (dniJunk.has(t)) return false;
           const klCount = (t.match(/[KL]/gi) || []).length;
           return klCount / t.length < 0.5;
         };
