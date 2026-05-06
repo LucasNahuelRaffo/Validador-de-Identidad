@@ -69,3 +69,36 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ token:
 
   return NextResponse.json(data);
 }
+export async function DELETE(_req: Request, { params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  const supabase = getSupabase();
+
+  // 1. Obtener datos para saber qué archivos borrar
+  const { data: val } = await supabase
+    .from("validaciones")
+    .select("datos_dni")
+    .eq("token", token)
+    .single();
+
+  if (val) {
+    const datos = val.datos_dni as Record<string, string> | null;
+    const files = [
+      `${token}/dni.${datos?.ext_dni || "jpg"}`,
+      `${token}/dorso.${datos?.ext_dni_dorso || "jpg"}`,
+      `${token}/selfie.${datos?.ext_selfie || "jpg"}`
+    ];
+    
+    // Intentar borrar del storage (si fallara no bloqueamos el borrado de la DB)
+    await supabase.storage.from("validaciones").remove(files);
+  }
+
+  // 2. Borrar de la base de datos
+  const { error } = await supabase
+    .from("validaciones")
+    .delete()
+    .eq("token", token);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ success: true });
+}
