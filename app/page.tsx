@@ -30,6 +30,7 @@ export default function PanelVendedor() {
   const [cargandoFotos, setCargandoFotos] = useState(false);
   const [errorFotos, setErrorFotos] = useState<string | null>(null);
   const [borrandoId, setBorrandoId] = useState<string | null>(null);
+  const [tokenABorrar, setTokenABorrar] = useState<{ token: string; nombre: string } | null>(null);
 
   const cargarValidaciones = async () => {
     try {
@@ -102,8 +103,6 @@ export default function PanelVendedor() {
   };
 
   const borrarValidacion = async (token: string) => {
-    if (!confirm("¿Estás seguro de que querés borrar esta validación? Esta acción no se puede deshacer.")) return;
-    
     setBorrandoId(token);
     try {
       const res = await fetch(`/api/validaciones/${token}`, { method: "DELETE" });
@@ -116,6 +115,7 @@ export default function PanelVendedor() {
       alert("Error de conexión.");
     } finally {
       setBorrandoId(null);
+      setTokenABorrar(null);
     }
   };
 
@@ -261,7 +261,7 @@ export default function PanelVendedor() {
                         )}
 
                         <button
-                          onClick={() => borrarValidacion(v.token)}
+                          onClick={() => setTokenABorrar({ token: v.token, nombre: v.nombre_cliente || "Desconocido" })}
                           disabled={borrandoId === v.token}
                           className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all ml-auto"
                           title="Borrar registro"
@@ -424,6 +424,63 @@ export default function PanelVendedor() {
                  )}
               </motion.div>
            </motion.div>
+        )}
+      </AnimatePresence>
+      {/* Modal de confirmación de borrado */}
+      <AnimatePresence>
+        {tokenABorrar && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4"
+            onClick={() => setTokenABorrar(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 10 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 flex flex-col items-center text-center gap-6 border border-slate-100"
+            >
+              <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center shadow-inner">
+                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              
+              <div className="space-y-2">
+                <h3 className="text-xl font-bold text-slate-900">¿Borrar registro?</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">
+                  Estás por eliminar la validación de <span className="font-bold text-slate-700">{tokenABorrar.nombre}</span>. Esta acción borrará también las fotos y no se puede deshacer.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 w-full">
+                <button
+                  onClick={() => borrarValidacion(tokenABorrar.token)}
+                  disabled={borrandoId === tokenABorrar.token}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 rounded-2xl transition-all shadow-lg shadow-red-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {borrandoId === tokenABorrar.token ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                      Borrando...
+                    </>
+                  ) : "Sí, borrar definitivamente"}
+                </button>
+                <button
+                  onClick={() => setTokenABorrar(null)}
+                  className="w-full bg-slate-50 text-slate-500 font-semibold py-3 rounded-2xl hover:bg-slate-100 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </main>
