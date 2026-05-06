@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useParams } from "next/navigation";
 import DNICapture from "@/components/DNICapture";
 import SelfieCapture from "@/components/SelfieCapture";
@@ -8,7 +9,7 @@ import ResultadoValidacion from "@/components/ResultadoValidacion";
 import { QRCodeSVG } from 'qrcode.react';
 import { getSupabase } from "@/lib/supabase";
 
-type Paso = "verificando" | "qr_desktop" | "dniFrente" | "dniDorso" | "selfie" | "procesando" | "resultado" | "error" | "expirado";
+type Paso = "verificando" | "consentimiento" | "qr_desktop" | "dniFrente" | "dniDorso" | "selfie" | "procesando" | "resultado" | "error" | "expirado" | "cancelado";
 
 export default function ValidacionPage() {
   const { token } = useParams<{ token: string }>();
@@ -40,13 +41,7 @@ export default function ValidacionPage() {
           return;
         }
 
-        const ua = navigator.userAgent;
-        if (/Mobi|Android/i.test(ua)) {
-          setPaso("dniFrente");
-        } else {
-          setIsDesktop(true);
-          setPaso("qr_desktop");
-        }
+        setPaso("consentimiento");
       })
       .catch(() => {
         setMensajeError("No se pudo conectar. Verificá tu conexión.");
@@ -138,7 +133,34 @@ export default function ValidacionPage() {
     setDatosDni({});
     setResultado(null);
     setMensajeError("");
-    setPaso(forceMobile || !isDesktop ? "dniFrente" : "qr_desktop");
+    setPaso("consentimiento");
+  };
+
+  const aceptarConsentimiento = () => {
+    const ua = navigator.userAgent;
+    if (/Mobi|Android/i.test(ua)) {
+      setPaso("dniFrente");
+    } else {
+      setIsDesktop(true);
+      setPaso("qr_desktop");
+    }
+  };
+
+  const rechazarConsentimiento = async () => {
+    try {
+      await fetch(`/api/validaciones/${token}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          estado: "rechazado",
+          datos_dni: { ...datosDni, motivo_rechazo: "consentimiento_denegado" }
+        })
+      });
+      setPaso("cancelado");
+    } catch (error) {
+      console.error("Error al rechazar consentimiento:", error);
+      setPaso("cancelado"); // Procedemos igual aunque falle el log
+    }
   };
 
   // Cálculo para la barra de pasos visual
@@ -163,6 +185,103 @@ export default function ValidacionPage() {
 
       <div className="flex-1 flex flex-col max-w-md mx-auto w-full px-5 py-6 gap-6">
         
+        <AnimatePresence mode="wait">
+          {paso === "consentimiento" && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.05 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
+              className="bg-white rounded-2xl border border-slate-200 shadow-xl p-8 flex flex-col items-center gap-6"
+            >
+              <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center shadow-inner relative overflow-hidden">
+                <motion.div 
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                </motion.div>
+                <motion.div 
+                  animate={{ 
+                    scale: [1, 1.2, 1],
+                    opacity: [0.1, 0.2, 0.1]
+                  }}
+                  transition={{ duration: 3, repeat: Infinity }}
+                  className="absolute inset-0 bg-blue-400 rounded-full"
+                />
+              </div>
+              
+              <div className="text-center space-y-3">
+                <h2 className="text-2xl font-bold text-slate-900">Protección de Datos</h2>
+                <p className="text-sm text-slate-600 leading-relaxed max-w-[280px] mx-auto">
+                  Para validar tu identidad de forma segura, necesitamos procesar tus documentos y biometría facial.
+                </p>
+                <div className="flex flex-col gap-2 items-center justify-center py-2">
+                  <span className="px-3 py-1 bg-green-50 text-green-700 text-[10px] font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                    Encriptación de Extremo a Extremo
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 w-full mt-2">
+                <button 
+                  onClick={aceptarConsentimiento}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl transition-all shadow-md active:scale-[0.98] flex items-center justify-center gap-2 group"
+                >
+                  Sí, permitir y continuar
+                  <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
+                </button>
+                
+                <button 
+                  onClick={rechazarConsentimiento}
+                  className="w-full bg-white border border-slate-200 text-slate-400 font-medium py-3 rounded-xl hover:bg-slate-50 hover:text-slate-600 transition-all text-sm"
+                >
+                  No permitir, cancelar link
+                </button>
+              </div>
+
+              <div className="bg-slate-50 rounded-xl p-4 flex items-start gap-3 w-full border border-slate-100">
+                <svg className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  Tus datos son temporales. Se utilizan únicamente para esta validación y se eliminan automáticamente al finalizar.
+                </p>
+              </div>
+            </motion.div>
+          )}
+
+          {paso === "cancelado" && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white rounded-2xl border border-slate-200 shadow-sm p-10 flex flex-col items-center text-center gap-6"
+            >
+              <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center shadow-inner">
+                <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-xl font-bold text-slate-900">Proceso Cancelado</h2>
+                <p className="text-sm text-slate-500 leading-relaxed">
+                  Has decidido no compartir tus datos. Por seguridad, este enlace ha sido invalidado y se ha notificado a la entidad correspondiente.
+                </p>
+              </div>
+              <div className="w-full h-px bg-slate-100 my-2" />
+              <p className="text-xs text-slate-400 italic">
+                Si esto fue un error, contacta a quien te envió el link para solicitar uno nuevo.
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {paso === "qr_desktop" && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 flex flex-col items-center text-center gap-6">
             <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
